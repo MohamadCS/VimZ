@@ -11,7 +11,7 @@ pub fn GapBuffer(comptime T: type) type {
     comptime switch (@typeInfo(T)) {
         .Int => {},
         else => {
-            try std.io.getStdErr().write("Type must be uN or iN\n");
+            try std.io.getStdErr().write("Type must be an integer\n");
             std.exit(0);
         },
     };
@@ -45,8 +45,8 @@ pub fn GapBuffer(comptime T: type) type {
             return self.gap_end - self.gap_start + 1;
         }
 
-        pub fn moveGap(self: *Self, new_cursor_idx: usize) !void {
-            if (self.gap_start - 1 == new_cursor_idx) {
+        pub fn moveGap(self: *Self, new_gap_idx: usize) !void {
+            if (self.gap_start == new_gap_idx) {
                 return;
             }
 
@@ -58,32 +58,59 @@ pub fn GapBuffer(comptime T: type) type {
             //  0 1 2 3 4 5 6 7 8 9 10 11
             // [1,2,3,4,5,6,7,#,#,#,X,Y]
             // [1,2,#,#,#,3,4,5,6,7,X,Y]
-            if (self.gap_start - 1 > new_cursor_idx) {
-
+            // [#,#,#,1,2,3,4,5,6,7,X,Y]
+            if (self.gap_start > new_gap_idx) {
                 var from = self.gap_start - 1;
 
-                while(from >= new_cursor_idx + 1) : (from-=1) {
+                while (from >= new_gap_idx) : (if (from != 0) {
+                    from -= 1;
+                } else {
+                    break;
+                }) {
                     const to = from + gap_size;
                     self.buffer[to] = self.buffer[from];
                 }
 
-                self.gap_start = new_cursor_idx + 1;
+                self.gap_start = new_gap_idx;
                 self.gap_end = self.gap_start + gap_size - 1;
-            } else if (self.gap_start - 1 < new_cursor_idx) {
-                //  0 1 2 3 4 5 6 7 8 9 10 11
-                // [0,1,#,#,#,2,3,4,5,6,X,Y]
-                // [0,1,2,3,4,5,6,#,#,#,X,Y]
+            } else {
 
-                const effective_cursor_idx = new_cursor_idx + gap_size;
+                // gapsize = 3  new gap idx = 4
+                // [#,#,#,1,2,3,4,5,6,7,X,Y]
+                // [1,2,3,4,#,#,#,5,6,7,X,Y]
+                const eff_end_idx = new_gap_idx + gap_size;
 
-                for (self.gap_end + 1..effective_cursor_idx + 1) |from| {
+                for (self.gap_end + 1..eff_end_idx) |from| {
                     const to = from - gap_size;
                     self.buffer[to] = self.buffer[from];
                 }
 
-                self.gap_start = new_cursor_idx + 1;
+                self.gap_start = new_gap_idx;
                 self.gap_end = self.gap_start + gap_size - 1;
             }
+        }
+
+        pub fn write(self: *Self, data_slice: []const T) !void {
+            if (self.gapSize() <= data_slice.len) {
+                try self.expandGap(data_slice.len + min_gap_size);
+            }
+
+            assert(data_slice.len <= self.gapSize());
+
+            for (0..data_slice.len, self.gap_start..) |dataIdx, bufferIdx| {
+                self.buffer[bufferIdx] = data_slice[dataIdx];
+            }
+
+            self.gap_start += data_slice.len;
+        }
+
+        pub fn delete(self: *Self, count: usize) !void {
+            self.gap_start = @min(0, self.gap_start - count);
+        }
+
+        // Returns an array of the left and right buffers
+        pub fn getBuffers(self: Self) [2][]T {
+            return .{ self.buffer[0..self.gap_start], self.buffer[self.gap_end + 1 ..] };
         }
 
         fn expandGap(self: *Self, new_gap_size: usize) !void {
@@ -108,29 +135,6 @@ pub fn GapBuffer(comptime T: type) type {
 
             self.gap_end = new_gap_end;
             self.buffer = new_buffer;
-        }
-
-        pub fn write(self: *Self, data_slice: []const T) !void {
-            if (self.gapSize() <= data_slice.len) {
-                try self.expandGap(data_slice.len + min_gap_size);
-            }
-
-            assert(data_slice.len <= self.gapSize());
-
-            for (0..data_slice.len, self.gap_start..) |dataIdx, bufferIdx| {
-                self.buffer[bufferIdx] = data_slice[dataIdx];
-            }
-
-            self.gap_start += data_slice.len;
-        }
-
-        pub fn delete(self: *Self, count: usize) !void {
-            self.gap_start = @min(0, self.gap_start - count);
-        }
-
-        // Returns an array of the left and right buffers
-        pub fn getBuffers(self: Self) [2][]T {
-            return .{ self.buffer[0..self.gap_start], self.buffer[self.gap_end + 1 ..] };
         }
 
         pub fn print(self: Self) void {
@@ -180,7 +184,7 @@ test "Move gap" {
     try gap_buffer.write(str);
     gap_buffer.print();
 
-    try gap_buffer.moveGap(3);
+    try gap_buffer.moveGap(0);
 
     gap_buffer.print();
 }

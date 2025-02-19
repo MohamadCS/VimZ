@@ -93,12 +93,12 @@ pub const App = struct {
     fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('l', .{})) {
             self.cursor.col +|= 1;
-            try self.buff.moveGap(self.cursor.col -| 1);
+            try self.buff.moveGap(self.cursor.col);
         } else if (key.matches('j', .{})) {
             self.cursor.row +|= 1;
         } else if (key.matches('h', .{})) {
             self.cursor.col -|= 1;
-            try self.buff.moveGap(self.cursor.col -| 1);
+            try self.buff.moveGap(self.cursor.col);
         } else if (key.matches('k', .{})) {
             self.cursor.row -|= 1;
         } else if (key.matches('q', .{})) {
@@ -112,8 +112,8 @@ pub const App = struct {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             self.mode = Mode.Normal;
         } else if (key.text) |text| {
-            self.cursor.col +|= 1;
             try self.buff.write(text);
+            self.cursor.col +|= 1;
         }
         
     }
@@ -152,6 +152,7 @@ pub const App = struct {
         const file_contents = try self.file.readToEndAlloc(self.allocator, file_size);
 
         try self.buff.write(file_contents);
+        try self.buff.moveGap(0);
 
         self.allocator.free(file_contents);
     }

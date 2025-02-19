@@ -1,2 +1,2 @@
 # VimZig
-A vim like text editor written in zig
+A vim like text editor written in zig ... 
