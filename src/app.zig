@@ -29,7 +29,7 @@ pub const App = struct {
     allocator: Allocator,
 
     file: std.fs.File = undefined,
-    buff : GapBuffer(u8),
+    buff: GapBuffer(u8),
 
     mode: Mode,
 
@@ -45,7 +45,7 @@ pub const App = struct {
             .vx = try vaxis.init(alloc, .{}),
             .quit = false,
             .cursor = .{},
-            .buff = try GapBuffer(u8).init(alloc), 
+            .buff = try GapBuffer(u8).init(alloc),
             .mode = Mode.Normal,
         };
     }
@@ -59,9 +59,24 @@ pub const App = struct {
     fn draw(self: *Self) !void {
         const win = self.vx.window();
 
+        win.clear();
+
         win.showCursor(self.cursor.col, self.cursor.row);
 
-        var splits = std.mem.split(u8, self.buff.items, "\n");
+        const buffers = self.buff.getBuffers();
+
+        var new_buff = try self.allocator.alloc(u8, buffers[0].len + buffers[1].len);
+        defer self.allocator.free(new_buff);
+
+        for (0..buffers[0].len) |i| {
+            new_buff[i] = buffers[0][i];
+        }
+
+        for (buffers[0].len..buffers[0].len + buffers[1].len , 0..buffers[1].len) |i, j| {
+            new_buff[i] = buffers[1][j];
+        }
+
+        var splits = std.mem.split(u8, new_buff, "\n");
 
         var row: u16 = 0;
         while (splits.next()) |chunk| : (row +|= 1) {
@@ -78,10 +93,12 @@ pub const App = struct {
     fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('l', .{})) {
             self.cursor.col +|= 1;
+            try self.buff.moveGap(self.cursor.col -| 1);
         } else if (key.matches('j', .{})) {
             self.cursor.row +|= 1;
         } else if (key.matches('h', .{})) {
             self.cursor.col -|= 1;
+            try self.buff.moveGap(self.cursor.col -| 1);
         } else if (key.matches('k', .{})) {
             self.cursor.row -|= 1;
         } else if (key.matches('q', .{})) {
@@ -95,12 +112,10 @@ pub const App = struct {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             self.mode = Mode.Normal;
         } else if (key.text) |text| {
-            self.vx.window().writeCell(self.cursor.col, self.cursor.row, Cell{
-                .char = .{ .grapheme = text },
-            });
-
             self.cursor.col +|= 1;
+            try self.buff.write(text);
         }
+        
     }
 
     fn handleEvent(self: *Self, event: Event) !void {
@@ -136,9 +151,7 @@ pub const App = struct {
         const file_size = (try self.file.stat()).size;
         const file_contents = try self.file.readToEndAlloc(self.allocator, file_size);
 
-        for (file_contents) |ch| {
-            try self.buff.append(ch);
-        }
+        try self.buff.write(file_contents);
 
         self.allocator.free(file_contents);
     }

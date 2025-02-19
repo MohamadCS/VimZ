@@ -23,8 +23,8 @@ pub fn GapBuffer(comptime T: type) type {
         gap_start: usize,
         gap_end: usize,
 
-        const init_size = 10;
-        const min_gap_size = 0;
+        const init_size = 5;
+        const min_gap_size = 3;
 
         const Self = @This();
 
@@ -45,35 +45,39 @@ pub fn GapBuffer(comptime T: type) type {
             return self.gap_end - self.gap_start + 1;
         }
 
-        // old cursor pos = gap_start - 1
-        // -----c-----
-        // [1,2,3,#,#,4,6]
-        // [1,2,3,#,#,]
-        fn moveGap(self: *Self, new_cursor_idx: usize) !void {
+        pub fn moveGap(self: *Self, new_cursor_idx: usize) !void {
             if (self.gap_start - 1 == new_cursor_idx) {
                 return;
             }
 
             const gap_size = self.gapSize();
 
+            // old cursor pos = gap_start - 1
+            // -----c-----
+            //  From cursor +1 to gap_start copy to cursror +1 + gap_size
+            //  0 1 2 3 4 5 6 7 8 9 10 11
+            // [1,2,3,4,5,6,7,#,#,#,X,Y]
+            // [1,2,#,#,#,3,4,5,6,7,X,Y]
             if (self.gap_start - 1 > new_cursor_idx) {
-                const copy_data_size = self.gap_start - new_cursor_idx - 1;
-                std.debug.print("Need to copy: {}\n", .{copy_data_size});
 
-                const copy_to_idx_start = self.gap_end - copy_data_size + 1;
+                var from = self.gap_start - 1;
 
-                for (new_cursor_idx + 1..self.gap_start, copy_to_idx_start..self.gap_end + 1) |from, to| {
+                while(from >= new_cursor_idx + 1) : (from-=1) {
+                    const to = from + gap_size;
                     self.buffer[to] = self.buffer[from];
                 }
 
                 self.gap_start = new_cursor_idx + 1;
                 self.gap_end = self.gap_start + gap_size - 1;
             } else if (self.gap_start - 1 < new_cursor_idx) {
-                const effective_cursor_idx = new_cursor_idx + gap_size;
-                const copy_data_size = effective_cursor_idx - self.gap_end;
-                std.debug.print("Need to copy: {}\n", .{copy_data_size});
+                //  0 1 2 3 4 5 6 7 8 9 10 11
+                // [0,1,#,#,#,2,3,4,5,6,X,Y]
+                // [0,1,2,3,4,5,6,#,#,#,X,Y]
 
-                for (self.gap_end + 1..effective_cursor_idx + 1, self.gap_start..self.gap_start + copy_data_size) |from, to| {
+                const effective_cursor_idx = new_cursor_idx + gap_size;
+
+                for (self.gap_end + 1..effective_cursor_idx + 1) |from| {
+                    const to = from - gap_size;
                     self.buffer[to] = self.buffer[from];
                 }
 
@@ -92,7 +96,7 @@ pub fn GapBuffer(comptime T: type) type {
 
             // Append the prefix
             for (0..self.gap_start) |i| {
-                new_buffer[i] = self.buffer[0];
+                new_buffer[i] = self.buffer[i];
             }
 
             // Append the suffix
@@ -107,7 +111,7 @@ pub fn GapBuffer(comptime T: type) type {
         }
 
         pub fn write(self: *Self, data_slice: []const T) !void {
-            if (self.gapSize() < data_slice.len) {
+            if (self.gapSize() <= data_slice.len) {
                 try self.expandGap(data_slice.len + min_gap_size);
             }
 
@@ -129,9 +133,10 @@ pub fn GapBuffer(comptime T: type) type {
             return .{ self.buffer[0..self.gap_start], self.buffer[self.gap_end + 1 ..] };
         }
 
-        fn print(self: Self) void {
+        pub fn print(self: Self) void {
             const buffers = self.getBuffers();
-            std.debug.print("{s}[Gap]{s}\n", .{ buffers[0], buffers[1] });
+
+            std.debug.print("|{s}[{},{}]{s}| length: {}\n", .{ buffers[0], self.gap_start, self.gap_end, buffers[1], self.buffer.len });
         }
     };
 }
@@ -168,5 +173,14 @@ test "Move gap" {
     var gap_buffer = try GapBuffer(u8).init(alloc);
     defer gap_buffer.deinit();
 
+    const str: []const u8 = "hello world"[0..];
 
+    gap_buffer.print();
+
+    try gap_buffer.write(str);
+    gap_buffer.print();
+
+    try gap_buffer.moveGap(3);
+
+    gap_buffer.print();
 }
