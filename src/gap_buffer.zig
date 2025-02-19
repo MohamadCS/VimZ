@@ -7,6 +7,7 @@ const Error = error{
     TypeError,
 };
 
+
 pub fn GapBuffer(comptime T: type) type {
     comptime switch (@typeInfo(T)) {
         .Int => {},
@@ -18,7 +19,6 @@ pub fn GapBuffer(comptime T: type) type {
 
     return struct {
         allocator: Allocator,
-
         buffer: []T,
         gap_start: usize,
         gap_end: usize,
@@ -45,23 +45,17 @@ pub fn GapBuffer(comptime T: type) type {
             return self.gap_end - self.gap_start + 1;
         }
 
-        pub fn moveGap(self: *Self, new_gap_idx: usize) !void {
+        pub fn moveCursor(self: *Self, new_gap_idx: usize) !void {
             if (self.gap_start == new_gap_idx) {
                 return;
             }
 
             const gap_size = self.gapSize();
 
-            // old cursor pos = gap_start - 1
-            // -----c-----
-            //  From cursor +1 to gap_start copy to cursror +1 + gap_size
-            //  0 1 2 3 4 5 6 7 8 9 10 11
-            // [1,2,3,4,5,6,7,#,#,#,X,Y]
-            // [1,2,#,#,#,3,4,5,6,7,X,Y]
-            // [#,#,#,1,2,3,4,5,6,7,X,Y]
             if (self.gap_start > new_gap_idx) {
                 var from = self.gap_start - 1;
 
+                // Copy backwards to avoid collisions.
                 while (from >= new_gap_idx) : (if (from != 0) {
                     from -= 1;
                 } else {
@@ -74,12 +68,9 @@ pub fn GapBuffer(comptime T: type) type {
                 self.gap_start = new_gap_idx;
                 self.gap_end = self.gap_start + gap_size - 1;
             } else {
-
-                // gapsize = 3  new gap idx = 4
-                // [#,#,#,1,2,3,4,5,6,7,X,Y]
-                // [1,2,3,4,#,#,#,5,6,7,X,Y]
                 const eff_end_idx = new_gap_idx + gap_size;
 
+                // Copy Forwards to avoid collisions.
                 for (self.gap_end + 1..eff_end_idx) |from| {
                     const to = from - gap_size;
                     self.buffer[to] = self.buffer[from];
@@ -113,6 +104,11 @@ pub fn GapBuffer(comptime T: type) type {
             return .{ self.buffer[0..self.gap_start], self.buffer[self.gap_end + 1 ..] };
         }
 
+        // Since Cursor def might change
+        pub fn getCursorIdx(self: *Self) usize {
+            return self.gap_start;
+        }
+
         fn expandGap(self: *Self, new_gap_size: usize) !void {
             const raw_data_size = self.buffer.len - self.gapSize();
             const new_buffer_size = raw_data_size + new_gap_size;
@@ -136,6 +132,34 @@ pub fn GapBuffer(comptime T: type) type {
             self.gap_end = new_gap_end;
             self.buffer = new_buffer;
         }
+
+        pub const DelPolicy = union(enum) {
+            Number: usize,
+            DelimiterSet: std.AutoHashMap(T,u8),
+        };
+
+        pub fn deleteForwards(self: *Self, delPolicy: DelPolicy) !void {
+            // TODO: Shrink the gap after a certain threshold.
+
+            switch (delPolicy) {
+                .Number => |num| {
+                    const maxIdx = @min(self.buffer.len - 1, self.gap_end + num);
+                    self.gap_end = maxIdx;
+                },
+                .DelimiterSet => |set| {
+                    for (self.gap_end + 1..self.buffer.len) |i| {
+                        if (set.contains(self.buffer[i])) {
+                            break;
+                        }
+
+                        self.gap_end += 1;
+                    }
+                },
+            }
+        }
+
+        // pub fn deleteForwards(self : *Self, Union(SomeSetType delimter, number )
+        // pub fn deleteBackwards(self : *Self, Union(SomeSetType delimter number )
 
         pub fn print(self: Self) void {
             const buffers = self.getBuffers();
@@ -184,7 +208,7 @@ test "Move gap" {
     try gap_buffer.write(str);
     gap_buffer.print();
 
-    try gap_buffer.moveGap(0);
+    try gap_buffer.moveCursor(0);
 
     gap_buffer.print();
 }

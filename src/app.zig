@@ -1,7 +1,7 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const Cell = vaxis.Cell;
-const GapBuffer = @import("gap_buffer.zig").GapBuffer;
+const GapBuffer = @import("gap_buffer.zig").GapBuffer(u8);
 
 const Allocator = std.mem.Allocator;
 
@@ -29,7 +29,9 @@ pub const App = struct {
     allocator: Allocator,
 
     file: std.fs.File = undefined,
-    buff: GapBuffer(u8),
+    buff: GapBuffer,
+
+    max_width: u16 = 0,
 
     mode: Mode,
 
@@ -45,7 +47,7 @@ pub const App = struct {
             .vx = try vaxis.init(alloc, .{}),
             .quit = false,
             .cursor = .{},
-            .buff = try GapBuffer(u8).init(alloc),
+            .buff = try GapBuffer.init(alloc),
             .mode = Mode.Normal,
         };
     }
@@ -61,31 +63,49 @@ pub const App = struct {
 
         win.clear();
 
-        win.showCursor(self.cursor.col, self.cursor.row);
-
         const buffers = self.buff.getBuffers();
 
-        var new_buff = try self.allocator.alloc(u8, buffers[0].len + buffers[1].len);
-        defer self.allocator.free(new_buff);
+        var buff = try self.allocator.alloc(u8, buffers[0].len + buffers[1].len);
+        defer self.allocator.free(buff);
 
         for (0..buffers[0].len) |i| {
-            new_buff[i] = buffers[0][i];
+            buff[i] = buffers[0][i];
         }
 
-        for (buffers[0].len..buffers[0].len + buffers[1].len , 0..buffers[1].len) |i, j| {
-            new_buff[i] = buffers[1][j];
+        for (buffers[0].len..buffers[0].len + buffers[1].len, 0..buffers[1].len) |i, j| {
+            buff[i] = buffers[1][j];
         }
 
-        var splits = std.mem.split(u8, new_buff, "\n");
+        var splits = std.mem.split(u8, buff, "\n");
 
         var row: u16 = 0;
+        var idx: u16 = 0;
+
+
+
         while (splits.next()) |chunk| : (row +|= 1) {
-            win.writeCell(0, row, Cell{
-                .char = .{
-                    .grapheme = chunk,
-                },
-            });
+            for (0..chunk.len) |col| {
+                win.writeCell(@intCast(col), row, Cell{
+                    .char = .{
+                        .grapheme = buff[idx .. idx + 1],
+                    },
+                });
+
+                if (row == self.cursor.row) {
+                    self.cursor.col = @min(chunk.len - 1 , self.cursor.col);
+                    if(self.cursor.col == col) {
+                        try self.buff.moveCursor(idx);
+                    }
+                }
+
+                idx += 1;
+            }
+            idx += 1;
         }
+
+        self.cursor.row = @min(row - 2, self.cursor.row);
+
+        win.showCursor(self.cursor.col, self.cursor.row);
 
         try self.vx.render(self.tty.anyWriter());
     }
@@ -93,18 +113,20 @@ pub const App = struct {
     fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('l', .{})) {
             self.cursor.col +|= 1;
-            try self.buff.moveGap(self.cursor.col);
         } else if (key.matches('j', .{})) {
             self.cursor.row +|= 1;
         } else if (key.matches('h', .{})) {
             self.cursor.col -|= 1;
-            try self.buff.moveGap(self.cursor.col);
         } else if (key.matches('k', .{})) {
             self.cursor.row -|= 1;
         } else if (key.matches('q', .{})) {
             self.quit = true;
         } else if (key.matches('i', .{})) {
             self.mode = Mode.Insert;
+        } else if (key.matches('d', .{})) {
+            try self.buff.deleteForwards(GapBuffer.DelPolicy{ .Number = 5 });
+        } else if (key.matches('x', .{})) {
+            try self.buff.deleteForwards(GapBuffer.DelPolicy{ .Number = 1 });
         }
     }
 
@@ -115,7 +137,6 @@ pub const App = struct {
             try self.buff.write(text);
             self.cursor.col +|= 1;
         }
-        
     }
 
     fn handleEvent(self: *Self, event: Event) !void {
@@ -137,14 +158,14 @@ pub const App = struct {
 
         _ = args.next().?;
 
-        var fileName: []const u8 = "";
+        var file_name: []const u8 = "";
         if (args.next()) |arg| {
-            fileName = arg;
+            file_name = arg;
         } else {
             log.err("Must provide a file", .{});
         }
 
-        self.file = std.fs.cwd().openFile(fileName, .{}) catch |err| {
+        self.file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
             log.err("Could not open the file", .{});
             return err;
         };
@@ -152,7 +173,7 @@ pub const App = struct {
         const file_contents = try self.file.readToEndAlloc(self.allocator, file_size);
 
         try self.buff.write(file_contents);
-        try self.buff.moveGap(0);
+        try self.buff.moveCursor(0);
 
         self.allocator.free(file_contents);
     }
