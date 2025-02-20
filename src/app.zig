@@ -2,7 +2,8 @@ const std = @import("std");
 const vaxis = @import("vaxis");
 const Cell = vaxis.Cell;
 
-const GapBuffer = @import("gap_buffer.zig").GapBuffer(u8);
+const CharType: type = u8;
+const GapBuffer = @import("gap_buffer.zig").GapBuffer(CharType);
 
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.main);
@@ -20,7 +21,15 @@ const Mode = enum {
 const Cursor = struct {
     row: u16 = 0,
     col: u16 = 0,
-    color: vaxis.Color = .{ .rgb = .{ 86, 148, 159 } },
+};
+
+const StatusLine = struct {
+    bg: vaxis.Color = .{ .rgb = .{ 255, 250, 243 } },
+    fg: vaxis.Color = .{ .rgb = .{ 87, 82, 121 } },
+};
+
+const Editor = struct {
+    fg: vaxis.Color = .{ .rgb = .{ 87, 82, 121 } },
 };
 
 pub const App = struct {
@@ -38,6 +47,9 @@ pub const App = struct {
 
     quit: bool,
     cursor: Cursor,
+
+    statusLine: StatusLine = .{},
+    editor: Editor = .{},
 
     const Self = @This();
 
@@ -78,25 +90,23 @@ pub const App = struct {
             .height = 1,
             .width = win.width,
         });
-        const statusLineBgColor = vaxis.Color{
-            .rgb = .{ 255, 250, 243 },
-        };
-
         statusLineWin.fill(.{ .style = .{
-            .bg = statusLineBgColor,
+            .bg = self.statusLine.bg,
         } });
 
         _ = statusLineWin.printSegment(vaxis.Segment{
+            .text = "",
+            .style = .{ .bg = self.statusLine.bg, .bold = true, .fg = self.statusLine.fg },
+        }, .{});
+
+        _ = statusLineWin.printSegment(vaxis.Segment{
             .text = if (self.mode == Mode.Normal) "NORMAL" else "INSERT",
-            .style = .{
-                .bg = statusLineBgColor,
-                .bold = true,
-            },
+            .style = .{ .bg = self.statusLine.bg, .bold = true, .fg = self.statusLine.fg },
         }, .{});
 
         const buffers = self.buff.getBuffers();
 
-        var buff = try self.allocator.alloc(u8, buffers[0].len + buffers[1].len);
+        var buff = try self.allocator.alloc(CharType, buffers[0].len + buffers[1].len);
         defer self.allocator.free(buff);
 
         // TODO: Remove buff, and loop over the two buffers instead of allocating
@@ -111,7 +121,7 @@ pub const App = struct {
             buff[i] = buffers[1][j];
         }
 
-        var splits = std.mem.split(u8, buff, "\n");
+        var splits = std.mem.split(CharType, buff, "\n");
 
         var row: u16 = 0;
         var idx: u16 = 0; // Current Cell
@@ -125,6 +135,10 @@ pub const App = struct {
             //     continue;
             // }
 
+            // TODO: Change when implementing scrolling
+            if (row > editorWin.height) {
+                break;
+            }
             if (chunk.len == 0) {
                 if (self.cursor.row == row) {
                     try self.buff.moveCursor(idx);
@@ -133,11 +147,9 @@ pub const App = struct {
             }
 
             for (0..chunk.len) |col| {
-                editorWin.writeCell(@intCast(col), effective_row, Cell{
-                    .char = .{
-                        .grapheme = buff[idx .. idx + 1],
-                    },
-                });
+                editorWin.writeCell(@intCast(col), effective_row, Cell{ .char = .{
+                    .grapheme = buff[idx .. idx + 1],
+                }, .style = .{ .fg = self.editor.fg } });
 
                 if (row == self.cursor.row) {
                     if (row > win.height) {
@@ -145,7 +157,11 @@ pub const App = struct {
                     }
 
                     // ensures that the cursor is not outside the row.
-                    self.cursor.col = @min(chunk.len - 1, self.cursor.col);
+                    // chunk len = 1 col = 1
+
+                    if (self.mode == Mode.Normal) {
+                        self.cursor.col = @min(chunk.len - 1, self.cursor.col);
+                    }
 
                     // If we are at the cursor position then move
                     // the buffer's position to there.
@@ -172,7 +188,7 @@ pub const App = struct {
     fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
         // Needs much more work, will stay like that just for testing.
 
-        var x = std.AutoHashMap(u8, u8).init(self.allocator);
+        var x = std.AutoHashMap(CharType, u8).init(self.allocator);
         defer x.deinit();
         try x.put(')', ' ');
         try x.put('\n', ' ');
