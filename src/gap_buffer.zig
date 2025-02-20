@@ -5,8 +5,8 @@ const assert = std.debug.assert;
 
 const Error = error{
     TypeError,
+    NotFound,
 };
-
 
 pub fn GapBuffer(comptime T: type) type {
     comptime switch (@typeInfo(T)) {
@@ -133,33 +133,101 @@ pub fn GapBuffer(comptime T: type) type {
             self.buffer = new_buffer;
         }
 
-        pub const DelPolicy = union(enum) {
+        pub const SearchPolicy = union(enum) {
             Number: usize,
-            DelimiterSet: std.AutoHashMap(T,u8),
+            DelimiterSet: std.AutoHashMap(T, u8),
+            Char: T,
         };
 
-        pub fn deleteForwards(self: *Self, delPolicy: DelPolicy) !void {
+        // BUG : dont delete the delimter
+        pub fn deleteForwards(self: *Self, searchPolicy: SearchPolicy) !void {
             // TODO: Shrink the gap after a certain threshold.
 
-            switch (delPolicy) {
+            switch (searchPolicy) {
                 .Number => |num| {
                     const maxIdx = @min(self.buffer.len - 1, self.gap_end + num);
                     self.gap_end = maxIdx;
                 },
-                .DelimiterSet => |set| {
-                    for (self.gap_end + 1..self.buffer.len) |i| {
-                        if (set.contains(self.buffer[i])) {
-                            break;
-                        }
 
-                        self.gap_end += 1;
-                    }
+                .DelimiterSet => |set| {
+                    // if it found the delmiter then we backoff by 1, otherwise, we
+                    // delete until of the buffer
+                    // If we want to delete until the end of the line simply
+                    // include '\n' in the delimter set
+                    var deleteToIdx = self.findForwards(SearchPolicy{
+                        .DelimiterSet = set,
+                    }) catch self.buffer.len;
+
+                    deleteToIdx -|= 1;
+
+                    self.gap_end = deleteToIdx;
                 },
+                else => unreachable,
             }
         }
 
-        // pub fn deleteForwards(self : *Self, Union(SomeSetType delimter, number )
-        // pub fn deleteBackwards(self : *Self, Union(SomeSetType delimter number )
+        // BUG : dont delete the delimter
+        pub fn deleteBackwards(self: *Self, searchPolicy: SearchPolicy) !void {
+            // TODO: Shrink the gap after a certain threshold.
+
+            switch (searchPolicy) {
+                .Number => |num| {
+                    const minIdx = @min(0, self.gap_start - num);
+                    self.gap_start = minIdx;
+                },
+
+                .DelimiterSet => |set| {
+                    var deleteToIdx = self.findBackwards(SearchPolicy{
+                        .DelimiterSet = set,
+                    }) catch 1;
+
+                    deleteToIdx -|= 1;
+                    self.gap_start = deleteToIdx;
+                },
+                else => unreachable,
+            }
+        }
+
+        pub fn findForwards(self: *Self, searchPolicy: SearchPolicy) !usize {
+            for (self.gap_end + 1..self.buffer.len) |i| {
+                switch (searchPolicy) {
+                    .DelimiterSet => |*set| {
+                        if (set.contains(self.buffer[i])) return i;
+                    },
+
+                    .Char => |ch| {
+                        if (self.buffer[i] == ch) return i;
+                    },
+
+                    else => unreachable,
+                }
+            }
+            return Error.NotFound;
+        }
+
+        pub fn findBackwards(self: *Self, searchPolicy: SearchPolicy) !usize {
+            var i = self.gap_start;
+
+            if (i == 0) {
+                return Error.NotFound;
+            }
+
+            while (i > 0) {
+                i -= 1;
+
+                switch (searchPolicy) {
+                    .DelimiterSet => |*set| {
+                        if (set.contains(self.buffer[i])) return i;
+                    },
+                    .Char => |ch| {
+                        if (self.buffer[i] == ch) return i;
+                    },
+                    else => unreachable,
+                }
+            }
+
+            return Error.NotFound;
+        }
 
         pub fn print(self: Self) void {
             const buffers = self.getBuffers();

@@ -1,10 +1,10 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const Cell = vaxis.Cell;
+
 const GapBuffer = @import("gap_buffer.zig").GapBuffer(u8);
 
 const Allocator = std.mem.Allocator;
-
 const log = std.log.scoped(.main);
 
 const Event = union(enum) {
@@ -26,12 +26,13 @@ const Cursor = struct {
 pub const App = struct {
     tty: vaxis.Tty,
     vx: vaxis.Vaxis,
+
     allocator: Allocator,
 
     file: std.fs.File = undefined,
     buff: GapBuffer,
 
-    max_width: u16 = 0,
+    top: u16,
 
     mode: Mode,
 
@@ -49,6 +50,7 @@ pub const App = struct {
             .cursor = .{},
             .buff = try GapBuffer.init(alloc),
             .mode = Mode.Normal,
+            .top = 0,
         };
     }
 
@@ -63,11 +65,44 @@ pub const App = struct {
 
         win.clear();
 
+        const editorWin = win.child(.{
+            .x_off = 0,
+            .y_off = 0,
+            .width = win.width,
+            .height = win.height - 2,
+        });
+
+        const statusLineWin = win.child(.{
+            .x_off = 0,
+            .y_off = win.height - 2,
+            .height = 1,
+            .width = win.width,
+        });
+        const statusLineBgColor = vaxis.Color{
+            .rgb = .{ 255, 250, 243 },
+        };
+
+        statusLineWin.fill(.{ .style = .{
+            .bg = statusLineBgColor,
+        } });
+
+        _ = statusLineWin.printSegment(vaxis.Segment{
+            .text = if (self.mode == Mode.Normal) "NORMAL" else "INSERT",
+            .style = .{
+                .bg = statusLineBgColor,
+                .bold = true,
+            },
+        }, .{});
+
         const buffers = self.buff.getBuffers();
 
         var buff = try self.allocator.alloc(u8, buffers[0].len + buffers[1].len);
         defer self.allocator.free(buff);
 
+        // TODO: Remove buff, and loop over the two buffers instead of allocating
+        // memory on the heap
+
+        // add the two buffers to the array;
         for (0..buffers[0].len) |i| {
             buff[i] = buffers[0][i];
         }
@@ -79,38 +114,69 @@ pub const App = struct {
         var splits = std.mem.split(u8, buff, "\n");
 
         var row: u16 = 0;
-        var idx: u16 = 0;
+        var idx: u16 = 0; // Current Cell
+        var effective_row: u16 = 0;
 
-
-
+        // Render each cell individually
         while (splits.next()) |chunk| : (row +|= 1) {
+
+            // if (row < self.top) {
+            //     idx += (@intCast(chunk.len +| 1));
+            //     continue;
+            // }
+
+            if (chunk.len == 0) {
+                if (self.cursor.row == row) {
+                    try self.buff.moveCursor(idx);
+                    self.cursor.col = 0;
+                }
+            }
+
             for (0..chunk.len) |col| {
-                win.writeCell(@intCast(col), row, Cell{
+                editorWin.writeCell(@intCast(col), effective_row, Cell{
                     .char = .{
                         .grapheme = buff[idx .. idx + 1],
                     },
                 });
 
                 if (row == self.cursor.row) {
-                    self.cursor.col = @min(chunk.len - 1 , self.cursor.col);
-                    if(self.cursor.col == col) {
+                    if (row > win.height) {
+                        self.top = row - win.height;
+                    }
+
+                    // ensures that the cursor is not outside the row.
+                    self.cursor.col = @min(chunk.len - 1, self.cursor.col);
+
+                    // If we are at the cursor position then move
+                    // the buffer's position to there.
+                    if (self.cursor.col == col) {
                         try self.buff.moveCursor(idx);
                     }
                 }
-
                 idx += 1;
             }
+
+            effective_row += 1;
+            // skip '\n'
             idx += 1;
         }
 
+        // because of the last + 1 of the while.
         self.cursor.row = @min(row - 2, self.cursor.row);
 
-        win.showCursor(self.cursor.col, self.cursor.row);
+        editorWin.showCursor(self.cursor.col, self.cursor.row);
 
         try self.vx.render(self.tty.anyWriter());
     }
 
     fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
+        // Needs much more work, will stay like that just for testing.
+
+        var x = std.AutoHashMap(u8, u8).init(self.allocator);
+        defer x.deinit();
+        try x.put(')', ' ');
+        try x.put('\n', ' ');
+
         if (key.matches('l', .{})) {
             self.cursor.col +|= 1;
         } else if (key.matches('j', .{})) {
@@ -124,15 +190,21 @@ pub const App = struct {
         } else if (key.matches('i', .{})) {
             self.mode = Mode.Insert;
         } else if (key.matches('d', .{})) {
-            try self.buff.deleteForwards(GapBuffer.DelPolicy{ .Number = 5 });
+            try self.buff.deleteForwards(GapBuffer.SearchPolicy{ .Number = 5 });
         } else if (key.matches('x', .{})) {
-            try self.buff.deleteForwards(GapBuffer.DelPolicy{ .Number = 1 });
+            try self.buff.deleteForwards(GapBuffer.SearchPolicy{ .Number = 1 });
+        } else if (key.matches('a', .{})) {
+            try self.buff.deleteBackwards(GapBuffer.SearchPolicy{ .DelimiterSet = x });
         }
     }
 
     fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             self.mode = Mode.Normal;
+        } else if (key.matches(vaxis.Key.enter, .{})) {
+            try self.buff.write("\n");
+            self.cursor.row +|= 1;
+            self.cursor.col = 0;
         } else if (key.text) |text| {
             try self.buff.write(text);
             self.cursor.col +|= 1;
@@ -186,9 +258,6 @@ pub const App = struct {
             .vaxis = &self.vx,
         };
 
-        // self.file = try std.fs.cwd().openFile("", .{});
-        // defer self.file.close();
-
         // Loop Setup
         try loop.init();
         try loop.start();
@@ -197,7 +266,7 @@ pub const App = struct {
 
         // Settings
         try self.vx.enterAltScreen(self.tty.anyWriter());
-        try self.vx.queryTerminal(self.tty.anyWriter(), 1 * std.time.ns_per_s);
+        try self.vx.queryTerminal(self.tty.anyWriter(), 0.1 * std.time.ns_per_s);
 
         while (!self.quit) {
             loop.pollEvent();
