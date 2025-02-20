@@ -41,7 +41,7 @@ pub const App = struct {
     file: std.fs.File = undefined,
     buff: GapBuffer,
 
-    top: u16,
+    top: usize,
 
     mode: Mode,
 
@@ -125,35 +125,48 @@ pub const App = struct {
 
         var row: u16 = 0;
         var idx: u16 = 0; // Current Cell
-        var effective_row: u16 = 0;
+        var virt_row: u16 = 0;
 
         // Render each cell individually
         while (splits.next()) |chunk| : (row +|= 1) {
-
-            // if (row < self.top) {
-            //     idx += (@intCast(chunk.len +| 1));
-            //     continue;
-            // }
+            if (row < self.top) {
+                idx += @intCast(chunk.len + 1);
+                continue;
+            }
 
             // TODO: Change when implementing scrolling
-            if (row > editorWin.height) {
+            if (row > self.top + editorWin.height) {
                 break;
             }
+
             if (chunk.len == 0) {
-                if (self.cursor.row == row) {
+                if (self.cursor.row == virt_row) {
+                    if (virt_row >= editorWin.height - 1) {
+                        self.top += 1;
+                        self.cursor.row -|= 1;
+                    } else if(virt_row == 0 and self.top > 0){
+                        self.top -= 1;
+                        self.cursor.row +|= 1;
+                    }
+
+
                     try self.buff.moveCursor(idx);
                     self.cursor.col = 0;
                 }
             }
 
             for (0..chunk.len) |col| {
-                editorWin.writeCell(@intCast(col), effective_row, Cell{ .char = .{
+                editorWin.writeCell(@intCast(col), virt_row, Cell{ .char = .{
                     .grapheme = buff[idx .. idx + 1],
                 }, .style = .{ .fg = self.editor.fg } });
 
-                if (row == self.cursor.row) {
-                    if (row > win.height) {
-                        self.top = row - win.height;
+                if (virt_row == self.cursor.row) {
+                    if (virt_row >= editorWin.height - 1) {
+                        self.top += 1;
+                        self.cursor.row -|= 1;
+                    } else if(virt_row == 0 and self.top > 0){
+                        self.top -= 1;
+                        self.cursor.row +|= 1;
                     }
 
                     // ensures that the cursor is not outside the row.
@@ -172,7 +185,7 @@ pub const App = struct {
                 idx += 1;
             }
 
-            effective_row += 1;
+            virt_row += 1;
             // skip '\n'
             idx += 1;
         }
@@ -187,11 +200,6 @@ pub const App = struct {
 
     fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
         // Needs much more work, will stay like that just for testing.
-
-        var x = std.AutoHashMap(CharType, u8).init(self.allocator);
-        defer x.deinit();
-        try x.put(')', ' ');
-        try x.put('\n', ' ');
 
         if (key.matches('l', .{})) {
             self.cursor.col +|= 1;
@@ -209,14 +217,13 @@ pub const App = struct {
             try self.buff.deleteForwards(GapBuffer.SearchPolicy{ .Number = 5 });
         } else if (key.matches('x', .{})) {
             try self.buff.deleteForwards(GapBuffer.SearchPolicy{ .Number = 1 });
-        } else if (key.matches('a', .{})) {
-            try self.buff.deleteBackwards(GapBuffer.SearchPolicy{ .DelimiterSet = x });
         }
     }
 
     fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             self.mode = Mode.Normal;
+            self.cursor.col -|= 1;
         } else if (key.matches(vaxis.Key.enter, .{})) {
             try self.buff.write("\n");
             self.cursor.row +|= 1;
