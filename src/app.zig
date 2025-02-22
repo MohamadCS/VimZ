@@ -72,24 +72,23 @@ pub const App = struct {
         self.buff.deinit();
     }
 
-    fn draw(self: *Self) !void {
-        const win = self.vx.window();
+    fn allocBuff(self: *Self) ![]const CharType {
+        const buffers = self.buff.getBuffers();
 
-        win.clear();
+        var buff = try self.allocator.alloc(CharType, buffers[0].len + buffers[1].len);
 
-        const editorWin = win.child(.{
-            .x_off = 0,
-            .y_off = 0,
-            .width = win.width,
-            .height = win.height - 2,
-        });
+        for (0..buffers[0].len) |i| {
+            buff[i] = buffers[0][i];
+        }
 
-        const statusLineWin = win.child(.{
-            .x_off = 0,
-            .y_off = win.height - 2,
-            .height = 1,
-            .width = win.width,
-        });
+        for (buffers[0].len..buffers[0].len + buffers[1].len, 0..buffers[1].len) |i, j| {
+            buff[i] = buffers[1][j];
+        }
+
+        return buff;
+    }
+
+    fn drawStatusLine(self: *Self, statusLineWin: *vaxis.Window) void {
         statusLineWin.fill(.{ .style = .{
             .bg = self.statusLine.bg,
         } });
@@ -103,31 +102,39 @@ pub const App = struct {
             .text = if (self.mode == Mode.Normal) "NORMAL" else "INSERT",
             .style = .{ .bg = self.statusLine.bg, .bold = true, .fg = self.statusLine.fg },
         }, .{});
+    }
 
-        const buffers = self.buff.getBuffers();
+    fn updateState(self: *Self) !void {
+        const win = self.vx.window();
 
-        var buff = try self.allocator.alloc(CharType, buffers[0].len + buffers[1].len);
+        win.clear();
+
+        const editorWin = win.child(.{
+            .x_off = 0,
+            .y_off = 0,
+            .width = win.width,
+            .height = win.height - 2,
+        });
+
+        var statusLineWin = win.child(.{
+            .x_off = 0,
+            .y_off = win.height - 2,
+            .height = 1,
+            .width = win.width,
+        });
+
+        self.drawStatusLine(&statusLineWin);
+
+        const buff = try self.allocBuff();
         defer self.allocator.free(buff);
-
-        // TODO: Remove buff, and loop over the two buffers instead of allocating
-        // memory on the heap
-
-        // add the two buffers to the array;
-        for (0..buffers[0].len) |i| {
-            buff[i] = buffers[0][i];
-        }
-
-        for (buffers[0].len..buffers[0].len + buffers[1].len, 0..buffers[1].len) |i, j| {
-            buff[i] = buffers[1][j];
-        }
 
         var splits = std.mem.split(CharType, buff, "\n");
 
-        var row: u16 = 0;
-        var idx: u16 = 0; // Current Cell
+        var row: usize = 0;
+        var idx: usize = 0; // Current Cell
         var virt_row: u16 = 0;
 
-        // Render each cell individually
+        // State Update
         while (splits.next()) |chunk| : (row +|= 1) {
             if (row < self.top) {
                 idx += @intCast(chunk.len + 1);
@@ -142,13 +149,12 @@ pub const App = struct {
             if (chunk.len == 0) {
                 if (self.cursor.row == virt_row) {
                     if (virt_row >= editorWin.height - 1) {
-                        self.top += 1;
+                        self.top +|= 1;
                         self.cursor.row -|= 1;
-                    } else if(virt_row == 0 and self.top > 0){
-                        self.top -= 1;
+                    } else if (virt_row == 0 and self.top > 0) {
+                        self.top -|= 1;
                         self.cursor.row +|= 1;
                     }
-
 
                     try self.buff.moveCursor(idx);
                     self.cursor.col = 0;
@@ -156,15 +162,11 @@ pub const App = struct {
             }
 
             for (0..chunk.len) |col| {
-                editorWin.writeCell(@intCast(col), virt_row, Cell{ .char = .{
-                    .grapheme = buff[idx .. idx + 1],
-                }, .style = .{ .fg = self.editor.fg } });
-
                 if (virt_row == self.cursor.row) {
                     if (virt_row >= editorWin.height - 1) {
                         self.top += 1;
                         self.cursor.row -|= 1;
-                    } else if(virt_row == 0 and self.top > 0){
+                    } else if (virt_row == 0 and self.top > 0) {
                         self.top -= 1;
                         self.cursor.row +|= 1;
                     }
@@ -191,7 +193,69 @@ pub const App = struct {
         }
 
         // because of the last + 1 of the while.
-        self.cursor.row = @min(row - 2, self.cursor.row);
+        self.cursor.row = @min(virt_row -| 2, self.cursor.row);
+        self.top = @min(self.top, row -| 2);
+    }
+
+    // TODO: the plan is to sepearte this function for each componenet
+    // Many of this function logic, can be done in the handleEvent
+    // For that we only need to store the static data of the windows
+    // dimensions
+    // Keep it like that for now.
+    fn draw(self: *Self) !void {
+        const win = self.vx.window();
+
+        win.clear();
+
+        const editorWin = win.child(.{
+            .x_off = 0,
+            .y_off = 0,
+            .width = win.width,
+            .height = win.height - 2,
+        });
+
+        var statusLineWin = win.child(.{
+            .x_off = 0,
+            .y_off = win.height - 2,
+            .height = 1,
+            .width = win.width,
+        });
+
+        self.drawStatusLine(&statusLineWin);
+        try self.updateState();
+
+        var buff = try self.allocBuff();
+        defer self.allocator.free(buff);
+
+        var splits = std.mem.split(CharType, buff, "\n");
+
+        var row: usize = 0;
+        var idx: usize = 0; // Current Cell
+        var virt_row: u16 = 0;
+
+        while (splits.next()) |chunk| : (row +|= 1) {
+            if (row < self.top) {
+                idx += @intCast(chunk.len + 1);
+                continue;
+            }
+
+            // TODO: Change when implementing scrolling
+            if (row > self.top + editorWin.height) {
+                break;
+            }
+
+            for (0..chunk.len) |col| {
+                editorWin.writeCell(@intCast(col), virt_row, Cell{ .char = .{
+                    .grapheme = buff[idx .. idx + 1],
+                }, .style = .{ .fg = self.editor.fg } });
+
+                idx += 1;
+            }
+
+            virt_row += 1;
+            // skip '\n'
+            idx += 1;
+        }
 
         editorWin.showCursor(self.cursor.col, self.cursor.row);
 
@@ -213,8 +277,10 @@ pub const App = struct {
             self.quit = true;
         } else if (key.matches('i', .{})) {
             self.mode = Mode.Insert;
-        } else if (key.matches('d', .{})) {
-            try self.buff.deleteForwards(GapBuffer.SearchPolicy{ .Number = 5 });
+        } else if (key.matches('d', .{ .ctrl = true })) {
+            self.top +|= self.vx.window().height / 2;
+        } else if (key.matches('u', .{ .ctrl = true })) {
+            self.top -|= self.vx.window().height / 2;
         } else if (key.matches('x', .{})) {
             try self.buff.deleteForwards(GapBuffer.SearchPolicy{ .Number = 1 });
         }
@@ -289,7 +355,7 @@ pub const App = struct {
 
         // Settings
         try self.vx.enterAltScreen(self.tty.anyWriter());
-        try self.vx.queryTerminal(self.tty.anyWriter(), 0.1 * std.time.ns_per_s);
+        try self.vx.queryTerminal(self.tty.anyWriter(), 1 * std.time.ns_per_s);
 
         while (!self.quit) {
             loop.pollEvent();
@@ -299,7 +365,12 @@ pub const App = struct {
                 try self.handleEvent(event);
             }
 
+            if (self.quit) {
+                return;
+            }
+
             try self.draw();
         }
+
     }
 };

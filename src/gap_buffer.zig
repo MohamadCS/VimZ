@@ -18,13 +18,23 @@ pub fn GapBuffer(comptime T: type) type {
     };
 
     return struct {
+        /// Memory Allocator 
         allocator: Allocator,
+
+        /// Internal buffer data including the gap
         buffer: []T,
+
+        /// The index of the start of the gap
         gap_start: usize,
+
+        /// The index of the end of the gap
         gap_end: usize,
 
-        const init_size = 5;
-        const min_gap_size = 3;
+        /// The gap size when init() is called
+        const init_size = 10;
+
+        /// Guranteed writing memory before calling resize again
+        const min_gap_size = 50;
 
         const Self = @This();
 
@@ -45,6 +55,8 @@ pub fn GapBuffer(comptime T: type) type {
             return self.gap_end - self.gap_start + 1;
         }
 
+        /// Moves the cursror to new_gap_idx,
+        /// The function does not alloc memory
         pub fn moveCursor(self: *Self, new_gap_idx: usize) !void {
             if (self.gap_start == new_gap_idx) {
                 return;
@@ -81,6 +93,10 @@ pub fn GapBuffer(comptime T: type) type {
             }
         }
 
+        /// Writes a data slice begining at the current cursor index
+        /// if there is the gap size is not enought, then it will
+        /// allocate new memory and replace the pointer to 
+        /// the buffer's slice.
         pub fn write(self: *Self, data_slice: []const T) !void {
             if (self.gapSize() <= data_slice.len) {
                 try self.expandGap(data_slice.len + min_gap_size);
@@ -99,12 +115,13 @@ pub fn GapBuffer(comptime T: type) type {
             self.gap_start = @min(0, self.gap_start - count);
         }
 
-        // Returns an array of the left and right buffers
+        /// Returns an array containing at index 0 the
+        /// data to the left of the cursor, and at index 1, the
+        /// data to the right of the cursor
         pub fn getBuffers(self: Self) [2][]T {
             return .{ self.buffer[0..self.gap_start], self.buffer[self.gap_end + 1 ..] };
         }
 
-        // Since Cursor def might change
         pub fn getCursorIdx(self: *Self) usize {
             return self.gap_start;
         }
