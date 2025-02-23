@@ -57,7 +57,7 @@ pub fn GapBuffer(comptime T: type) type {
 
         /// Moves the cursror to new_gap_idx,
         /// The function does not alloc memory
-        pub fn moveCursor(self: *Self, new_gap_idx: usize) !void {
+        pub fn moveGap(self: *Self, new_gap_idx: usize) !void {
             if (self.gap_start == new_gap_idx) {
                 return;
             }
@@ -317,7 +317,7 @@ test "Move gap" {
     try gap_buffer.write(str);
     gap_buffer.print();
 
-    try gap_buffer.moveCursor(0);
+    try gap_buffer.moveGap(0);
 
     gap_buffer.print();
 }
