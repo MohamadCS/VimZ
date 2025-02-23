@@ -263,14 +263,18 @@ pub const App = struct {
                 }
             }
 
+            var virt_col: u16 = 0;
             for (0..chunk.len) |col| {
+                if (self.left > col) {
+                    idx += 1;
+                    continue;
+                }
                 if (virt_row == self.cursor.row) {
-
                     if (self.mode == Mode.Normal) {
                         self.cursor.col = @min(chunk.len - 1 -| self.left, self.cursor.col);
                     }
 
-                    if (self.cursor.col == col) {
+                    if (self.cursor.col == virt_col) {
                         try self.buff.moveGap(idx);
                     }
                 }
@@ -278,9 +282,10 @@ pub const App = struct {
 
                 // Solves the case where we press 'a' and the cursor is at the last
                 // element in the row
-                if (self.cursor.row == virt_row and self.cursor.col == chunk.len) {
+                if (self.cursor.row == virt_row and self.cursor.col == chunk.len - 1 -| self.left) {
                     try self.buff.moveGap(idx);
                 }
+                virt_col += 1;
             }
 
             virt_row += 1;
@@ -450,7 +455,7 @@ pub const App = struct {
 
         // Settings
         try self.vx.enterAltScreen(self.tty.anyWriter());
-        try self.vx.queryTerminal(self.tty.anyWriter(), 0.1 * std.time.ns_per_s);
+        try self.vx.queryTerminal(self.tty.anyWriter(), 0.5 * std.time.ns_per_s);
 
         while (!self.quit) {
             loop.pollEvent();
