@@ -18,7 +18,7 @@ pub fn GapBuffer(comptime T: type) type {
     };
 
     return struct {
-        /// Memory Allocator 
+        /// Memory Allocator
         allocator: Allocator,
 
         /// Internal buffer data including the gap
@@ -95,7 +95,7 @@ pub fn GapBuffer(comptime T: type) type {
 
         /// Writes a data slice begining at the current cursor index
         /// if there is the gap size is not enought, then it will
-        /// allocate new memory and replace the pointer to 
+        /// allocate new memory and replace the pointer to
         /// the buffer's slice.
         pub fn write(self: *Self, data_slice: []const T) !void {
             if (self.gapSize() <= data_slice.len) {
@@ -157,7 +157,7 @@ pub fn GapBuffer(comptime T: type) type {
         };
 
         // BUG : dont delete the delimter
-        pub fn deleteForwards(self: *Self, searchPolicy: SearchPolicy) !void {
+        pub fn deleteForwards(self: *Self, searchPolicy: SearchPolicy,includeDelimiter : bool) !void {
             // TODO: Shrink the gap after a certain threshold.
 
             switch (searchPolicy) {
@@ -171,9 +171,12 @@ pub fn GapBuffer(comptime T: type) type {
                     // delete until of the buffer
                     // If we want to delete until the end of the line simply
                     // include '\n' in the delimter set
-                    var deleteToIdx = self.findForwards(SearchPolicy{
-                        .DelimiterSet = set,
-                    }) catch self.buffer.len;
+                    var deleteToIdx = self.findForwards(
+                        SearchPolicy{
+                            .DelimiterSet = set,
+                        },
+                        includeDelimiter,
+                    ) catch self.buffer.len;
 
                     deleteToIdx -|= 1;
 
@@ -184,19 +187,22 @@ pub fn GapBuffer(comptime T: type) type {
         }
 
         // BUG : dont delete the delimter
-        pub fn deleteBackwards(self: *Self, searchPolicy: SearchPolicy) !void {
+        pub fn deleteBackwards(self: *Self, searchPolicy: SearchPolicy, includeDelimiter: bool) !void {
             // TODO: Shrink the gap after a certain threshold.
 
             switch (searchPolicy) {
                 .Number => |num| {
-                    const minIdx = @min(0, self.gap_start - num);
+                    const minIdx = @max(0, self.gap_start - num);
                     self.gap_start = minIdx;
                 },
 
                 .DelimiterSet => |set| {
-                    var deleteToIdx = self.findBackwards(SearchPolicy{
-                        .DelimiterSet = set,
-                    }) catch 1;
+                    var deleteToIdx = self.findBackwards(
+                        SearchPolicy{
+                            .DelimiterSet = set,
+                        },
+                        includeDelimiter,
+                    ) catch 1;
 
                     deleteToIdx -|= 1;
                     self.gap_start = deleteToIdx;
@@ -205,7 +211,7 @@ pub fn GapBuffer(comptime T: type) type {
             }
         }
 
-        pub fn findForwards(self: *Self, searchPolicy: SearchPolicy) !usize {
+        pub fn findForwards(self: *Self, searchPolicy: SearchPolicy, includeDelimiter: bool) !usize {
             for (self.gap_end + 1..self.buffer.len) |i| {
                 switch (searchPolicy) {
                     .DelimiterSet => |*set| {
@@ -213,7 +219,13 @@ pub fn GapBuffer(comptime T: type) type {
                     },
 
                     .Char => |ch| {
-                        if (self.buffer[i] == ch) return i;
+                        if (self.buffer[i] == ch) {
+                            if (includeDelimiter) {
+                                return i;
+                            } else {
+                                return i -| 1;
+                            }
+                        }
                     },
 
                     else => unreachable,
@@ -222,7 +234,7 @@ pub fn GapBuffer(comptime T: type) type {
             return Error.NotFound;
         }
 
-        pub fn findBackwards(self: *Self, searchPolicy: SearchPolicy) !usize {
+        pub fn findBackwards(self: *Self, searchPolicy: SearchPolicy, includeDelimiter: bool) !usize {
             var i = self.gap_start;
 
             if (i == 0) {
@@ -237,7 +249,13 @@ pub fn GapBuffer(comptime T: type) type {
                         if (set.contains(self.buffer[i])) return i;
                     },
                     .Char => |ch| {
-                        if (self.buffer[i] == ch) return i;
+                        if (self.buffer[i] == ch) {
+                            if (includeDelimiter) {
+                                return i;
+                            } else {
+                                return i -| 1;
+                            }
+                        }
                     },
                     else => unreachable,
                 }
@@ -249,7 +267,13 @@ pub fn GapBuffer(comptime T: type) type {
         pub fn print(self: Self) void {
             const buffers = self.getBuffers();
 
-            std.debug.print("|{s}[{},{}]{s}| length: {}\n", .{ buffers[0], self.gap_start, self.gap_end, buffers[1], self.buffer.len });
+            std.debug.print("|{s}[{},{}]{s}| length: {}\n", .{
+                buffers[0],
+                self.gap_start,
+                self.gap_end,
+                buffers[1],
+                self.buffer.len,
+            });
         }
     };
 }
