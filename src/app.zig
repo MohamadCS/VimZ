@@ -11,21 +11,27 @@ const GapBuffer = @import("gap_buffer.zig").GapBuffer(CharType);
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.main);
 
+// Move to dedicated types file
 const Event = union(enum) {
     key_press: vaxis.Key,
     winsize: vaxis.Winsize,
 };
 
+// Move to dedicated types file
 pub const CursorState = struct {
     row: u16 = 0,
     col: u16 = 0,
+    abs_row: usize = 0,
+    abs_col: usize = 0,
 };
 
+// Move to dedicated types file
 pub const Mode = enum {
     Normal,
     Insert,
 };
 
+// Devide to App and State
 pub const App = struct {
     tty: vaxis.Tty,
     vx: vaxis.Vaxis,
@@ -51,6 +57,7 @@ pub const App = struct {
 
     statusLine: StatusLine,
 
+    // Move to a seperate class
     editor: struct {
         fg: vaxis.Color = .{
             .rgb = .{ 87, 82, 121 },
@@ -138,7 +145,7 @@ pub const App = struct {
             .height = win.height - 2,
         };
 
-         self.statusLine.win_opts = .{
+        self.statusLine.win_opts = .{
             .x_off = 0,
             .y_off = win.height - 2,
             .height = 1,
@@ -162,6 +169,9 @@ pub const App = struct {
             self.left -= 1;
             self.cursor.col +|= 1;
         }
+
+        self.cursor.abs_col = self.left + self.cursor.col;
+        self.cursor.abs_row = self.top + self.cursor.row;
     }
 
     fn moveAbs(self: *Self, col: u16, row: u16) !void {
@@ -337,6 +347,7 @@ pub const App = struct {
             try self.input_queue.append(key.codepoint);
         }
     }
+
     fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
         self.need_realloc = true;
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {

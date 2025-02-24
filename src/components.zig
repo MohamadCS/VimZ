@@ -6,6 +6,7 @@ const Vimz = Api.Vimz;
 pub fn addComps() !void {
     try Api.addStatusLineComp(.{ .update_func = &updateMode }, .Left);
     try Api.addStatusLineComp(.{ .update_func = &updateGitBranch }, .Left);
+
     try Api.addStatusLineComp(.{ .update_func = &updateRowCol }, .Right);
 }
 
@@ -30,8 +31,10 @@ fn updateMode(comp: *Api.StatusLine.Component) !void {
 }
 
 fn updateRowCol(comp: *Api.StatusLine.Component) !void {
-    const cursor_state = try Api.getAbsCursorState();
-    try comp.setText("{}:{}", .{ cursor_state.row, cursor_state.col });
+    const cursor_state = try Api.getCursorState();
+    try comp.setText("{}:{}", .{ cursor_state.abs_row, cursor_state.abs_col });
+    comp.style.?.fg = .{ .rgb = .{ 215, 130, 126 } };
+    comp.style.?.bold = true;
 }
 
 fn updateGitBranch(comp: *Api.StatusLine.Component) !void {
@@ -45,7 +48,12 @@ fn updateGitBranch(comp: *Api.StatusLine.Component) !void {
     }
 
     const alloc = gpa.allocator();
-    const text = try utils.getGitBranch(alloc);
+    const text = utils.getGitBranch(alloc) catch {
+        comp.hide = true;
+        return;
+    };
+
+    comp.hide = false;
 
     try comp.setText(" {s}", .{
         text,

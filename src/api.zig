@@ -16,17 +16,9 @@ pub fn setMode(mode: Vimz.Mode) !void {
     app.mode = mode;
 }
 
-pub fn getRelCursorState() !Vimz.CursorState {
+pub fn getCursorState() !Vimz.CursorState {
     const app = try App.getInstance();
     return app.cursor;
-}
-
-pub fn getAbsCursorState() !Vimz.CursorState {
-    const app = try App.getInstance();
-    return Vimz.CursorState{
-        .col = @intCast(app.cursor.col + app.left),
-        .row = @intCast(app.cursor.row + app.top)
-    };
 }
 
 pub fn getAllocator() !std.mem.Allocator {

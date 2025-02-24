@@ -41,7 +41,12 @@ pub const StatusLine = struct {
     };
 
     pub fn init(allocator: std.mem.Allocator) Self {
-        return Self{ .allocator = allocator, .left_comps = std.ArrayList(Component).init(allocator), .right_comps = std.ArrayList(Component).init(allocator), .win_opts = .{} };
+        return Self{
+            .allocator = allocator,
+            .left_comps = std.ArrayList(Component).init(allocator),
+            .right_comps = std.ArrayList(Component).init(allocator),
+            .win_opts = .{},
+        };
     }
 
     pub fn deinit(self: *Self) void {
@@ -77,35 +82,34 @@ pub const StatusLine = struct {
     pub fn draw(self: *Self, win: *vaxis.Window) !void {
         win.fill(.{ .style = self.style });
 
-        for (self.left_comps.items) |*comp| {
-            try comp.update_func(comp);
-        }
-        for (self.right_comps.items) |*comp| {
-            try comp.update_func(comp);
-        }
-
         var curr_col_offset: u16 = 0;
 
-        for (self.left_comps.items) |comp| {
-            curr_col_offset += comp.left_padding;
-            _ = win.printSegment(vaxis.Segment{
-                .text = comp.text.?,
-                .style = comp.style.?,
-            }, .{ .col_offset = curr_col_offset });
+        for (self.left_comps.items) |*comp| {
+            try comp.update_func(comp);
+            if (!comp.hide) {
+                curr_col_offset += comp.left_padding;
+                _ = win.printSegment(vaxis.Segment{
+                    .text = comp.text.?,
+                    .style = comp.style.?,
+                }, .{ .col_offset = curr_col_offset });
 
-            curr_col_offset += @intCast(comp.text.?.len + comp.right_padding) ;
+                curr_col_offset += @intCast(comp.text.?.len + comp.right_padding);
+            }
         }
 
         curr_col_offset = win.width;
 
-        for (self.right_comps.items) |comp| {
-            const col_offset: u16 = @intCast(curr_col_offset -| comp.right_padding -| (if (comp.text) |text| text.len else 0));
-            _ = win.printSegment(vaxis.Segment{
-                .text = comp.text orelse "Error",
-                .style = comp.style.?,
-            }, .{ .col_offset = @intCast(col_offset) });
+        for (self.right_comps.items) |*comp| {
+            try comp.update_func(comp);
+            if (!comp.hide) {
+                const col_offset: u16 = @intCast(curr_col_offset -| comp.right_padding -| (if (comp.text) |text| text.len else 0));
+                _ = win.printSegment(vaxis.Segment{
+                    .text = comp.text orelse "Error",
+                    .style = comp.style.?,
+                }, .{ .col_offset = @intCast(col_offset) });
 
-            curr_col_offset = col_offset -| comp.left_padding;
+                curr_col_offset = col_offset -| comp.left_padding;
+            }
         }
     }
 };
