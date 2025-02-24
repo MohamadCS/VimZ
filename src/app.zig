@@ -49,13 +49,6 @@ pub const App = struct {
     quit: bool,
     cursor: CursorState,
 
-    statusLineA: struct {
-        bg: vaxis.Color = .{ .rgb = .{ 255, 250, 243 } },
-        fg: vaxis.Color = .{ .rgb = .{ 87, 82, 121 } },
-        winOpts: vaxis.Window.ChildOptions = .{},
-        segments: std.ArrayList(?[]CharType),
-    },
-
     statusLine: StatusLine,
 
     editor: struct {
@@ -63,7 +56,7 @@ pub const App = struct {
             .rgb = .{ 87, 82, 121 },
         },
 
-        winOpts: vaxis.Window.ChildOptions = .{},
+        win_opts: vaxis.Window.ChildOptions = .{},
     },
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -80,7 +73,6 @@ pub const App = struct {
             .buff = try GapBuffer.init(allocator),
             .mode = Mode.Normal,
             .top = 0,
-            .statusLineA = .{ .segments = std.ArrayList(?[]CharType).init(allocator) },
             .editor = .{},
             .input_queue = std.ArrayList(u21).init(allocator),
             .need_realloc = false,
@@ -106,14 +98,9 @@ pub const App = struct {
         self.buff.deinit();
         self.allocator.free(self.text_buffer);
 
-        for (self.statusLineA.segments.items) |segment| {
-            if (segment) |value| {
-                self.allocator.free(value);
-            }
-        }
-        self.statusLineA.segments.deinit();
         self.input_queue.deinit();
         self.statusLine.deinit();
+
         const deinit_status = App.gpa.deinit();
         if (deinit_status == .leak) {
             log.err("memory leak", .{});
@@ -142,67 +129,16 @@ pub const App = struct {
         return self.text_buffer;
     }
 
-    // TODO: Write a struct that abstracts adding a componenet
-    // to the statusLine which will be responsible for holding the
-    // data and freeing it.
-    // In addition, there should be a process, that detect changes in
-    // outer data, like git branches.
-
-    fn drawStatusLine(self: *Self, statusLineWin: *vaxis.Window) !void {
-        statusLineWin.fill(.{ .style = .{
-            .bg = self.statusLineA.bg,
-        } });
-
-        if (self.statusLineA.segments.items.len == 0) {
-            try self.statusLineA.segments.append(null);
-            try self.statusLineA.segments.append(null);
-        }
-
-        for (self.statusLineA.segments.items) |segment| {
-            if (segment) |value| {
-                self.allocator.free(value);
-            }
-        }
-
-        // The solution to the memory leakis to create a status line that stores
-        // a simulation of a segment, then we free the status line
-        // buffer's at each redraw.
-
-        const mode = statusLineWin.printSegment(vaxis.Segment{
-            .text = if (self.mode == Mode.Normal) "NORMAL" else "INSERT",
-            .style = .{ .bg = self.statusLineA.bg, .bold = true, .fg = self.statusLineA.fg },
-        }, .{ .col_offset = 1 });
-
-        const branch_icon = statusLineWin.printSegment(vaxis.Segment{
-            .text = "",
-            .style = .{ .bg = self.statusLineA.bg, .bold = false, .fg = self.statusLineA.fg },
-        }, .{ .col_offset = mode.col + 2 });
-
-        self.statusLineA.segments.items[0] = try utils.getGitBranch(self.allocator);
-
-        _ = statusLineWin.printSegment(vaxis.Segment{
-            .text = self.statusLineA.segments.items[0].?,
-            .style = .{ .bg = self.statusLineA.bg, .bold = false, .fg = self.statusLineA.fg },
-        }, .{ .col_offset = branch_icon.col + 1 });
-
-        self.statusLineA.segments.items[1] = try std.fmt.allocPrint(self.allocator, "{}:{}", .{ self.cursor.row + self.top + 1, self.cursor.col + 1 });
-
-        _ = statusLineWin.printSegment(vaxis.Segment{
-            .text = self.statusLineA.segments.items[1].?,
-            .style = .{ .bg = self.statusLineA.bg, .bold = true, .fg = self.statusLineA.fg },
-        }, .{ .col_offset = @intCast(statusLineWin.width - self.statusLineA.segments.items[1].?.len - 2) });
-    }
-
     fn updateDims(self: *Self) !void {
         const win = self.vx.window();
-        self.editor.winOpts = .{
+        self.editor.win_opts = .{
             .x_off = 0,
             .y_off = 0,
             .width = win.width,
             .height = win.height - 2,
         };
 
-        self.statusLineA.winOpts = .{
+         self.statusLine.win_opts = .{
             .x_off = 0,
             .y_off = win.height - 2,
             .height = 1,
@@ -211,7 +147,7 @@ pub const App = struct {
     }
 
     fn checkBounds(self: *Self) void {
-        if (self.cursor.row >= self.editor.winOpts.height.? - 1) {
+        if (self.cursor.row >= self.editor.win_opts.height.? - 1) {
             self.top += 1;
             self.cursor.row -|= 1;
         } else if (self.cursor.row == 0 and self.top > 0) {
@@ -219,7 +155,7 @@ pub const App = struct {
             self.cursor.row +|= 1;
         }
 
-        if (self.cursor.col >= self.editor.winOpts.width.? - 1) {
+        if (self.cursor.col >= self.editor.win_opts.width.? - 1) {
             self.left += 1;
             self.cursor.col -|= 1;
         } else if (self.cursor.col == 0 and self.left > 0) {
@@ -257,7 +193,7 @@ pub const App = struct {
     fn update(self: *Self) !void {
         try self.updateDims();
 
-        const editorHeight = self.editor.winOpts.height.?;
+        const editorHeight = self.editor.win_opts.height.?;
 
         var splits = std.mem.split(CharType, try self.getBuff(), "\n");
 
@@ -360,8 +296,8 @@ pub const App = struct {
 
         win.clear();
 
-        var statusLineWin = win.child(self.statusLineA.winOpts);
-        var editorWin = win.child(self.editor.winOpts);
+        var statusLineWin = win.child(self.statusLine.win_opts);
+        var editorWin = win.child(self.editor.win_opts);
 
         try self.statusLine.draw(&statusLineWin);
         try self.drawEditor(&editorWin);
