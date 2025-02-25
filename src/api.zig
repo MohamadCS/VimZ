@@ -1,32 +1,38 @@
-pub const Vimz = @import("app.zig");
-pub const App = @import("app.zig").App;
-pub const StatusLine = @import("status_line.zig").StatusLine;
 const std = @import("std");
+
+pub const Vimz = @import("app.zig");
+pub const StatusLine = @import("status_line.zig").StatusLine;
+
+const Types = Vimz.Types;
 
 const Api = @This();
 
-
-pub fn getMode() !Vimz.Mode {
-    const app = try App.getInstance();
-    return app.mode;
+pub fn getMode() !Types.Mode {
+    const app = try Vimz.App.getInstance();
+    return app.editor.mode;
 }
 
-pub fn setMode(mode: Vimz.Mode) !void {
-    var app = try App.getInstance();
+pub fn enqueueEvent(event: Types.Event) !void {
+    const app = try Vimz.App.getInstance();
+    try app.enqueueEvent(event);
+}
+
+pub fn setMode(mode: Types.Mode) !void {
+    var app = try Vimz.App.getInstance();
     app.mode = mode;
 }
 
-pub fn getCursorState() !Vimz.CursorState {
-    const app = try App.getInstance();
-    return app.cursor;
+pub fn getCursorState() !Types.CursorState {
+    const app = try Vimz.App.getInstance();
+    return app.editor.cursor;
 }
 
 pub fn getAllocator() !std.mem.Allocator {
-    const app = try App.getInstance();
+    const app = try Vimz.App.getInstance();
     return app.allocator;
 }
 
 pub fn addStatusLineComp(comp: StatusLine.Component, pos: StatusLine.Position) !void {
-    var app = try App.getInstance();
+    var app = try Vimz.App.getInstance();
     try app.statusLine.addComp(comp, pos);
 }

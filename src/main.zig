@@ -3,11 +3,11 @@ const vaxis = @import("vaxis");
 
 const log = std.log.scoped(.main);
 
-const App = @import("app.zig").App;
+const Vimz = @import("app.zig").App;
 
 pub fn main() !void {
 
-    var app = try App.getInstance();
+    var app = try Vimz.getInstance();
     defer app.deinit();
 
     try app.run();

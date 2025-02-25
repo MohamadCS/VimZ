@@ -4,7 +4,7 @@ const Error = error{
     NotInGitRepo,
 };
 
-pub const delimters = [_]u21{
+pub const delimters = [_]u8{
     ' ',
     '\t',
     '\n',
@@ -40,8 +40,8 @@ pub const delimters = [_]u21{
 };
 
 /// Needs to be freed
-pub fn getDelimterSet(allocator: std.mem.Allocator) !std.AutoHashMap(u21, u8) {
-    var map = std.AutoHashMap(u21, u8).init(allocator);
+pub fn getDelimterSet(allocator: std.mem.Allocator) !std.AutoHashMap(u8, u8) {
+    var map = std.AutoHashMap(u8, u8).init(allocator);
     for (delimters) |delimiter| {
         try map.put(delimiter, 0);
     }

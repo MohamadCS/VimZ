@@ -112,7 +112,7 @@ pub fn GapBuffer(comptime T: type) type {
         }
 
         pub fn delete(self: *Self, count: usize) !void {
-            self.gap_start = @min(0, self.gap_start - count);
+            self.gap_start = @min(0, self.gap_start -| count);
         }
 
         /// Returns an array containing at index 0 the
@@ -157,7 +157,7 @@ pub fn GapBuffer(comptime T: type) type {
         };
 
         // BUG : dont delete the delimter
-        pub fn deleteForwards(self: *Self, searchPolicy: SearchPolicy,includeDelimiter : bool) !void {
+        pub fn deleteForwards(self: *Self, searchPolicy: SearchPolicy, includeDelimiter: bool) !void {
             // TODO: Shrink the gap after a certain threshold.
 
             switch (searchPolicy) {

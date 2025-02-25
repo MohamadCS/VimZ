@@ -1,6 +1,7 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const utils = @import("utils.zig");
+const Vimz = @import("app.zig");
 
 // Add async
 pub const StatusLine = struct {
@@ -8,6 +9,8 @@ pub const StatusLine = struct {
     right_comps: std.ArrayList(Component),
     allocator: std.mem.Allocator,
     win_opts: vaxis.Window.ChildOptions,
+    update_thread: std.Thread = undefined,
+    update_all: bool = false,
 
     style: vaxis.Style = .{
         .bg = .{ .rgb = .{ 255, 250, 243 } },
@@ -16,8 +19,16 @@ pub const StatusLine = struct {
 
     const Self = @This();
 
+    pub fn init(allocator: std.mem.Allocator) !Self {
+        return Self{
+            .allocator = allocator,
+            .left_comps = std.ArrayList(Component).init(allocator),
+            .right_comps = std.ArrayList(Component).init(allocator),
+            .win_opts = .{},
+        };
+    }
+
     pub const Position = enum {
-        Center,
         Left,
         Right,
     };
@@ -28,10 +39,10 @@ pub const StatusLine = struct {
         id: u16 = 0,
         style: ?vaxis.Style = null,
         left_padding: u16 = 1,
+        update_on_redraw: bool = true,
         right_padding: u16 = 1,
         allocator: std.mem.Allocator = undefined,
         hide: bool = false,
-        needs_update: bool = false, // should be write protected
         update_func: UpdateFunction,
 
         pub fn setText(self: *Component, comptime fmt: []const u8, args: anytype) !void {
@@ -39,15 +50,6 @@ pub const StatusLine = struct {
             self.text = try std.fmt.allocPrint(self.allocator, fmt, args);
         }
     };
-
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return Self{
-            .allocator = allocator,
-            .left_comps = std.ArrayList(Component).init(allocator),
-            .right_comps = std.ArrayList(Component).init(allocator),
-            .win_opts = .{},
-        };
-    }
 
     pub fn deinit(self: *Self) void {
         for (self.left_comps.items) |*comp| {
@@ -62,7 +64,7 @@ pub const StatusLine = struct {
         self.right_comps.deinit();
     }
 
-    pub fn addComp(self: *Self, comp: Component, pos: Position) std.mem.Allocator.Error!void {
+    pub fn addComp(self: *Self, comp: Component, pos: Position) !void {
         var newComp = comp;
 
         newComp.style = newComp.style orelse self.style;
@@ -75,7 +77,16 @@ pub const StatusLine = struct {
             .Right => {
                 try self.right_comps.append(newComp);
             },
-            else => unreachable,
+        }
+
+        self.update_thread = try std.Thread.spawn(.{}, StatusLine.updateWorker, .{});
+    }
+
+    pub fn updateWorker() !void {
+        var app = try Vimz.App.getInstance();
+        while (!app.quit) {
+            std.time.sleep(1 * std.time.ns_per_s);
+            try app.enqueueEvent(Vimz.Types.Event{ .refresh_status_line = 0 });
         }
     }
 
@@ -85,7 +96,10 @@ pub const StatusLine = struct {
         var curr_col_offset: u16 = 0;
 
         for (self.left_comps.items) |*comp| {
-            try comp.update_func(comp);
+            if (self.update_all or comp.update_on_redraw) {
+                    try comp.update_func(comp);
+            }
+
             if (!comp.hide) {
                 curr_col_offset += comp.left_padding;
                 _ = win.printSegment(vaxis.Segment{
@@ -100,7 +114,10 @@ pub const StatusLine = struct {
         curr_col_offset = win.width;
 
         for (self.right_comps.items) |*comp| {
-            try comp.update_func(comp);
+            if (self.update_all or comp.update_on_redraw) {
+                try comp.update_func(comp);
+            }
+
             if (!comp.hide) {
                 const col_offset: u16 = @intCast(curr_col_offset -| comp.right_padding -| (if (comp.text) |text| text.len else 0));
                 _ = win.printSegment(vaxis.Segment{
@@ -111,5 +128,7 @@ pub const StatusLine = struct {
                 curr_col_offset = col_offset -| comp.left_padding;
             }
         }
+
+        self.update_all = false;
     }
 };
