@@ -49,7 +49,7 @@ fn updateMode(comp: *Api.StatusLine.Component) !void {
 
 fn updateRowCol(comp: *Api.StatusLine.Component) !void {
     const cursor_state = try Api.getCursorState();
-    try comp.setText("{}:{}", .{ cursor_state.abs_row, cursor_state.abs_col });
+    try comp.setText("{}:{}", .{ cursor_state.abs_row + 1, cursor_state.abs_col + 1 });
     comp.style.?.fg = .{ .rgb = .{ 215, 130, 126 } };
     comp.style.?.bold = true;
 }

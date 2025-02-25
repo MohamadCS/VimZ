@@ -3,7 +3,6 @@ const vaxis = @import("vaxis");
 const utils = @import("utils.zig");
 
 pub const Comps = @import("components.zig");
-pub const Input = @import("input.zig").Input;
 pub const Editor = @import("editor.zig").Editor;
 pub const Types = @import("types.zig");
 pub const StatusLine = @import("status_line.zig").StatusLine;
@@ -169,7 +168,6 @@ pub const App = struct {
         try self.vx.queryTerminal(self.tty.anyWriter(), 1 * std.time.ns_per_s);
 
         try Comps.addComps();
-
         self.statusLine.update_all = true;
 
         while (!self.quit) {
