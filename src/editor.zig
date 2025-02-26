@@ -19,8 +19,6 @@ pub const Editor = struct {
 
     left: usize,
 
-    first_idx: usize = 0,
-
     mode: Vimz.Types.Mode,
 
     cursor: Vimz.Types.CursorState,
@@ -97,69 +95,6 @@ pub const Editor = struct {
     }
 
     pub fn update(self: *Self) !void {
-        // const editorHeight = self.win_opts.height.?;
-        //
-        // var splits = std.mem.split(CharType, try self.getBuff(), "\n");
-        //
-        // var row: usize = 0;
-        // var idx: usize = 0; // Current Cell
-        // var virt_row: u16 = 0;
-        //
-        // // we are here
-        // //
-        // // State Update
-        //
-        // while (splits.next()) |chunk| : (row +|= 1) {
-        //     if (row < self.top) {
-        //         idx += @intCast(chunk.len + 1);
-        //         continue;
-        //
-        //     if (row > self.top + editorHeight) {
-        //         break;
-        //     }
-        //
-        //     if (chunk.len == 0) {
-        //         if (self.cursor.row == virt_row) {
-        //             try self.buff.moveGap(idx);
-        //             self.cursor.col = 0;
-        //             self.left = 0;
-        //         }
-        //     }
-        //
-        //     var virt_col: u16 = 0;
-        //     for (0..chunk.len) |col| {
-        //         if (self.left > col) {
-        //             idx += 1;
-        //             continue;
-        //         }
-        //
-        //         if (virt_row == self.cursor.row) {
-        //             if (self.mode == Vimz.Types.Mode.Normal) {
-        //                 self.cursor.col = @min(chunk.len - 1 -| self.left, self.cursor.col);
-        //             }
-        //
-        //             if (self.cursor.col == virt_col) {
-        //                 try self.buff.moveGap(idx);
-        //             }
-        //         }
-        //         idx += 1;
-        //
-        //         // Solves the case where we press 'a' and the cursor is at the last
-        //         // element in the row
-        //         if (self.cursor.row == virt_row and self.cursor.col == chunk.len - 1 -| self.left) {
-        //             try self.buff.moveGap(idx);
-        //         }
-        //         virt_col += 1;
-        //     }
-        //
-        //     virt_row += 1;
-        //     // skip '\n'
-        //     idx += 1;
-        // }
-        //
-        // // because of the last + 1 of the while.
-        // self.cursor.row = @min(virt_row -| 2, self.cursor.row);
-        // self.top = @min(self.top, row -| 2);
 
         // need additional checking
         const lines_count = self.buff.lines.items.len;
@@ -175,6 +110,7 @@ pub const Editor = struct {
         if (line.len == 0) {}
         if (self.cursor.abs_col > line.len) {
             self.cursor.abs_col = line.len -| 1;
+            self.left = @min(self.left, line.len -| 1);
             self.cursor.col = @intCast(self.cursor.abs_col -| self.left);
         }
 
@@ -187,57 +123,23 @@ pub const Editor = struct {
     }
 
     pub fn draw(self: *Self, editorWin: *vaxis.Window) !void {
-        // var splits = std.mem.split(CharType, try self.getBuff(), "\n");
-        //
-        // var row: usize = 0;
-        // var virt_row: u16 = 0;
+        const max_row = @min(self.top + editorWin.height, self.buff.lines.items.len -| 1);
 
-        // while (splits.next()) |chunk| : (row +|= 1) {
-        //     if (row < self.top) {
-        //         continue;
-        //     }
-        //
-        //     if (row > self.top + editorWin.height) {
-        //         break;
-        //     }
-        //
-        //     var virt_col: u16 = 0;
-        //     for (0..chunk.len) |col| {
-        //         if (col < self.left) {
-        //             continue;
-        //         }
-        //
-        //         editorWin.writeCell(virt_col, virt_row, vaxis.Cell{ .char = .{
-        //             .grapheme = chunk[col .. col + 1],
-        //         }, .style = .{ .fg = self.fg } });
-        //         virt_col += 1;
-        //     }
-        //
-        //     virt_row += 1;
-        // }
-
-        var virt_row: u16 = 0;
-        for (self.top..self.top + editorWin.height) |row| {
-            if (row > self.buff.lines.items.len -| 1) {
-                break;
-            }
+        for (self.top..max_row, 0..) |row, virt_row| {
             const line = try self.buff.getLineInfo(row);
 
-            var virt_col: u16 = 0;
-            for (0..line.len) |col| {
-                if (col < self.left) {
-                    continue;
-                }
-
-                const idx = try self.buff.getIdx(row, col);
-                const slice = self.buff.buffer[idx .. idx + 1];
-                editorWin.writeCell(virt_col, virt_row, vaxis.Cell{ .char = .{
-                    .grapheme = slice,
-                }, .style = .{ .fg = self.fg } });
-                virt_col += 1;
+            if (line.len < self.left) {
+                continue;
             }
 
-            virt_row += 1;
+            // to ensure that we only draw what the screen can show
+            const start = self.left;
+            const end = @min(start + editorWin.width, line.len);
+            for (start..end, 0..) |col, virt_col| {
+                editorWin.writeCell(@intCast(virt_col), @intCast(virt_row), vaxis.Cell{ .char = .{
+                    .grapheme = try self.buff.getSlicedCharAt(row, col),
+                }, .style = .{ .fg = self.fg } });
+            }
         }
 
         editorWin.showCursor(self.cursor.col, self.cursor.row);

@@ -70,6 +70,16 @@ pub fn GapBuffer(comptime T: type) type {
             return self.gap_end - self.gap_start + 1;
         }
 
+        pub inline fn getSlicedCharAt(self: *Self, row: usize, col: usize) ![]T {
+            const idx = try self.getIdx(row, col);
+            return self.buffer[idx .. idx + 1];
+        }
+
+        pub inline fn getCharAt(self: *Self, row: usize, col: usize) !T {
+            const idx = try self.getIdx(row, col);
+            return self.buffer[idx];
+        }
+
         /// Moves the cursror to new_gap_idx,
         /// The function does not alloc memory
         pub fn moveGap(self: *Self, new_gap_idx: usize) !void {
@@ -115,7 +125,6 @@ pub fn GapBuffer(comptime T: type) type {
         pub fn updateLines(self: *Self) !void {
             self.lines.deinit();
             self.lines = std.ArrayList(Line).init(self.allocator);
-
 
             var offset: usize = 0;
             var buff_idx: usize = 0;

@@ -101,7 +101,7 @@ pub const StatusLine = struct {
 
         for (self.left_comps.items) |*comp| {
             if (self.update_all or comp.update_on_redraw) {
-                    try comp.update_func(comp);
+                try comp.update_func(comp);
             }
 
             if (!comp.hide) {
