@@ -74,6 +74,10 @@ pub const App = struct {
             .y_off = 0,
             .width = win.width,
             .height = win.height - 2,
+            // .border = .{
+            //     .glyphs = .single_rounded,
+            //     .where = .all
+            // }
         };
 
         self.statusLine.win_opts = .{
@@ -136,7 +140,6 @@ pub const App = struct {
         // TODO: App should not access editor's buff directly
         try self.editor.buff.write(file_contents);
         try self.editor.buff.moveGap(0);
-        self.editor.need_realloc = true;
     }
 
     pub fn update(self: *Self) !void {
@@ -165,7 +168,7 @@ pub const App = struct {
 
         // Settings
         try self.vx.enterAltScreen(self.tty.anyWriter());
-        try self.vx.queryTerminal(self.tty.anyWriter(), 1 * std.time.ns_per_s);
+        try self.vx.queryTerminal(self.tty.anyWriter(), 0.5 * std.time.ns_per_s);
 
         try Comps.addComps();
         self.statusLine.update_all = true;

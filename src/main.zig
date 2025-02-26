@@ -1,6 +1,5 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
-
 const log = std.log.scoped(.main);
 
 const Vimz = @import("app.zig").App;

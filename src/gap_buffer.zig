@@ -8,6 +8,9 @@ const Error = error{
     NotFound,
 };
 
+// TODO: implement a line table, each time we write a char, the table
+// should be updated
+
 pub fn GapBuffer(comptime T: type) type {
     comptime switch (@typeInfo(T)) {
         .Int => {},
@@ -27,16 +30,26 @@ pub fn GapBuffer(comptime T: type) type {
         /// The index of the start of the gap
         gap_start: usize,
 
+        dirty: bool = false,
+
         /// The index of the end of the gap
         gap_end: usize,
+
+        lines: std.ArrayList(Line),
 
         /// The gap size when init() is called
         const init_size = 10;
 
         /// Guranteed writing memory before calling resize again
-        const min_gap_size = 50;
+        const min_gap_size = 100;
 
         const Self = @This();
+
+        const Line = struct {
+            len: usize,
+            index: usize,
+            offset: usize,
+        };
 
         pub fn init(allocator: Allocator) !Self {
             return Self{
@@ -44,11 +57,13 @@ pub fn GapBuffer(comptime T: type) type {
                 .buffer = try allocator.alloc(T, init_size),
                 .gap_start = 0,
                 .gap_end = init_size - 1,
+                .lines = std.ArrayList(Line).init(allocator),
             };
         }
 
         pub fn deinit(self: *Self) void {
             self.allocator.free(self.buffer);
+            self.lines.deinit();
         }
 
         inline fn gapSize(self: *Self) usize {
@@ -97,7 +112,49 @@ pub fn GapBuffer(comptime T: type) type {
         /// if there is the gap size is not enought, then it will
         /// allocate new memory and replace the pointer to
         /// the buffer's slice.
+        pub fn updateLines(self: *Self) !void {
+            self.lines.deinit();
+            self.lines = std.ArrayList(Line).init(self.allocator);
+
+
+            var offset: usize = 0;
+            var buff_idx: usize = 0;
+            var line_idx: usize = 0;
+            var len: usize = 0;
+
+            while (buff_idx < self.gap_start) {
+                if (self.buffer[buff_idx] == '\n') {
+                    try self.lines.append(Line{ .offset = offset, .index = line_idx, .len = len });
+                    len = 0;
+                    line_idx += 1;
+                    offset = buff_idx + 1;
+                } else {
+                    len += 1;
+                }
+
+                buff_idx += 1;
+            }
+
+            buff_idx += self.gapSize();
+
+            while (buff_idx < self.buffer.len) {
+                if (self.buffer[buff_idx] == '\n') {
+                    try self.lines.append(Line{ .offset = offset, .index = line_idx, .len = len });
+                    len = 0;
+                    line_idx += 1;
+                    offset = buff_idx - self.gapSize() + 1;
+                } else {
+                    len += 1;
+                }
+
+                buff_idx += 1;
+            }
+
+            try self.lines.append(Line{ .offset = offset, .index = line_idx, .len = len });
+        }
+
         pub fn write(self: *Self, data_slice: []const T) !void {
+            self.dirty = true;
             if (self.gapSize() <= data_slice.len) {
                 try self.expandGap(data_slice.len + min_gap_size);
             }
@@ -190,6 +247,7 @@ pub fn GapBuffer(comptime T: type) type {
         pub fn deleteBackwards(self: *Self, searchPolicy: SearchPolicy, includeDelimiter: bool) !void {
             // TODO: Shrink the gap after a certain threshold.
 
+            self.dirty = true;
             switch (searchPolicy) {
                 .Number => |num| {
                     const minIdx = @max(0, self.gap_start - num);
@@ -264,16 +322,78 @@ pub fn GapBuffer(comptime T: type) type {
             return Error.NotFound;
         }
 
+        pub inline fn getLineInfo(self: *Self, line: usize) !Line {
+            if (self.dirty) {
+                try self.updateLines();
+                self.dirty = false;
+            }
+
+            return self.lines.items[line];
+        }
+
+        pub inline fn getIdx(self: *Self, row: usize, col: usize) !usize {
+            if (self.dirty) {
+                try self.updateLines();
+                self.dirty = false;
+            }
+
+            assert(row < self.lines.items.len);
+
+            const line = self.lines.items[row];
+
+            assert(col < line.len);
+
+            const index = line.offset + col;
+
+            if (line.offset >= self.gap_start or (line.offset <= self.gap_start and index >= self.gap_start)) {
+                return index + self.gapSize();
+            } else {
+                return index;
+            }
+        }
+
+        pub fn getLine(self: *Self, allocator: Allocator, idx: usize) ![]T {
+            if (self.dirty) {
+                try self.updateLines();
+                self.dirty = false;
+            }
+
+            var resultLine = try allocator.alloc(T, self.lines.items[idx].len);
+            const line = self.lines.items[idx];
+
+            var eff_idx = line.offset;
+
+            if (eff_idx >= self.gap_start) {
+                eff_idx += self.gapSize();
+            }
+
+            for (0..line.len) |i| {
+                if (eff_idx == self.gap_start) {
+                    eff_idx += self.gapSize();
+                }
+                resultLine[i] = self.buffer[eff_idx];
+                eff_idx += 1;
+            }
+
+            return resultLine;
+        }
+
         pub fn print(self: Self) void {
             const buffers = self.getBuffers();
 
-            std.debug.print("|{s}[{},{}]{s}| length: {}\n", .{
+            std.debug.print("buffer contant: {s}[{},{}]{s} \nlength: {}\n", .{
                 buffers[0],
                 self.gap_start,
                 self.gap_end,
                 buffers[1],
                 self.buffer.len,
             });
+
+            std.debug.print("line  length  offset\n", .{});
+
+            for (self.lines.items) |line| {
+                std.debug.print("{}  {}  {}\n", .{ line.index, line.len, line.offset });
+            }
         }
     };
 }
@@ -299,7 +419,7 @@ test "Test write" {
     );
 }
 
-test "Move gap" {
+test " update Lines" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
         _ = gpa.deinit();
@@ -310,14 +430,19 @@ test "Move gap" {
     var gap_buffer = try GapBuffer(u8).init(alloc);
     defer gap_buffer.deinit();
 
-    const str: []const u8 = "hello world"[0..];
-
-    gap_buffer.print();
+    const str: []const u8 =
+        \\hello world
+        \\hello again
+        \\hello another
+        \\hello another
+    [0..];
 
     try gap_buffer.write(str);
-    gap_buffer.print();
 
-    try gap_buffer.moveGap(0);
-
+    try gap_buffer.moveGap(50);
     gap_buffer.print();
+    std.debug.print("{s}", .{try gap_buffer.getLine(alloc, 0)});
+    std.debug.print("{s}", .{try gap_buffer.getLine(alloc, 1)});
+    std.debug.print("{s}", .{try gap_buffer.getLine(alloc, 2)});
+    std.debug.print("{s}", .{try gap_buffer.getLine(alloc, 3)});
 }

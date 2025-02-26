@@ -35,15 +35,19 @@ pub const StatusLine = struct {
 
     pub const Component = struct {
         const UpdateFunction = *const fn (comp: *StatusLine.Component) anyerror!void;
+        update_func: UpdateFunction,
+
         text: ?[]const u8 = null,
+
         id: u16 = 0,
+
         style: ?vaxis.Style = null,
         left_padding: u16 = 1,
-        update_on_redraw: bool = true,
         right_padding: u16 = 1,
+
+        update_on_redraw: bool = true,
         allocator: std.mem.Allocator = undefined,
         hide: bool = false,
-        update_func: UpdateFunction,
 
         pub fn setText(self: *Component, comptime fmt: []const u8, args: anytype) !void {
             if (self.text) |text| self.allocator.free(text);

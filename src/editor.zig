@@ -15,15 +15,13 @@ pub const Editor = struct {
 
     buff: GapBuffer,
 
-    text_buffer: []CharType,
-
     top: usize,
 
     left: usize,
 
-    mode: Vimz.Types.Mode,
+    first_idx: usize = 0,
 
-    need_realloc: bool,
+    mode: Vimz.Types.Mode,
 
     cursor: Vimz.Types.CursorState,
 
@@ -40,8 +38,6 @@ pub const Editor = struct {
         return Self{
             .allocator = allocator,
             .buff = try GapBuffer.init(allocator),
-            .need_realloc = false,
-            .text_buffer = try allocator.alloc(CharType, 0),
             .mode = Vimz.Types.Mode.Normal,
             .cursor = .{},
             .top = 0,
@@ -51,32 +47,9 @@ pub const Editor = struct {
 
     pub fn deinit(self: *Self) void {
         self.buff.deinit();
-        self.allocator.free(self.text_buffer);
     }
 
-    fn getBuff(self: *Self) ![]CharType {
-        if (self.need_realloc) {
-            const buffers = self.buff.getBuffers();
-
-            var buff = try self.allocator.alloc(CharType, buffers[0].len + buffers[1].len);
-
-            for (0..buffers[0].len) |i| {
-                buff[i] = buffers[0][i];
-            }
-
-            for (buffers[0].len..buffers[0].len + buffers[1].len, 0..buffers[1].len) |i, j| {
-                buff[i] = buffers[1][j];
-            }
-
-            self.allocator.free(self.text_buffer);
-            self.text_buffer = buff;
-        }
-
-        self.need_realloc = false;
-        return self.text_buffer;
-    }
-
-    fn checkBounds(self: *Self) void {
+    fn tryScroll(self: *Self) void {
         if (self.cursor.row >= self.win_opts.height.? - 1) {
             self.top += 1;
             self.cursor.row -|= 1;
@@ -100,119 +73,166 @@ pub const Editor = struct {
     pub fn moveAbs(self: *Self, col: u16, row: u16) !void {
         self.cursor.row = row;
         self.cursor.col = col;
-        self.checkBounds();
+        self.tryScroll();
     }
 
     pub fn moveUp(self: *Self, steps: u16) void {
         self.cursor.row -|= steps;
-        self.checkBounds();
+        self.tryScroll();
     }
 
     pub fn moveDown(self: *Self, steps: u16) void {
         self.cursor.row +|= steps;
-        self.checkBounds();
+        self.tryScroll();
     }
 
     pub fn moveLeft(self: *Self, steps: u16) void {
         self.cursor.col -|= steps;
-        self.checkBounds();
+        self.tryScroll();
     }
 
     pub fn moveRight(self: *Self, steps: u16) void {
         self.cursor.col +|= steps;
-        self.checkBounds();
+        self.tryScroll();
     }
 
     pub fn update(self: *Self) !void {
-        const editorHeight = self.win_opts.height.?;
-
-        var splits = std.mem.split(CharType, try self.getBuff(), "\n");
-
-        var row: usize = 0;
-        var idx: usize = 0; // Current Cell
-        var virt_row: u16 = 0;
-
-        // we are here
+        // const editorHeight = self.win_opts.height.?;
         //
-        // State Update
+        // var splits = std.mem.split(CharType, try self.getBuff(), "\n");
+        //
+        // var row: usize = 0;
+        // var idx: usize = 0; // Current Cell
+        // var virt_row: u16 = 0;
+        //
+        // // we are here
+        // //
+        // // State Update
+        //
+        // while (splits.next()) |chunk| : (row +|= 1) {
+        //     if (row < self.top) {
+        //         idx += @intCast(chunk.len + 1);
+        //         continue;
+        //
+        //     if (row > self.top + editorHeight) {
+        //         break;
+        //     }
+        //
+        //     if (chunk.len == 0) {
+        //         if (self.cursor.row == virt_row) {
+        //             try self.buff.moveGap(idx);
+        //             self.cursor.col = 0;
+        //             self.left = 0;
+        //         }
+        //     }
+        //
+        //     var virt_col: u16 = 0;
+        //     for (0..chunk.len) |col| {
+        //         if (self.left > col) {
+        //             idx += 1;
+        //             continue;
+        //         }
+        //
+        //         if (virt_row == self.cursor.row) {
+        //             if (self.mode == Vimz.Types.Mode.Normal) {
+        //                 self.cursor.col = @min(chunk.len - 1 -| self.left, self.cursor.col);
+        //             }
+        //
+        //             if (self.cursor.col == virt_col) {
+        //                 try self.buff.moveGap(idx);
+        //             }
+        //         }
+        //         idx += 1;
+        //
+        //         // Solves the case where we press 'a' and the cursor is at the last
+        //         // element in the row
+        //         if (self.cursor.row == virt_row and self.cursor.col == chunk.len - 1 -| self.left) {
+        //             try self.buff.moveGap(idx);
+        //         }
+        //         virt_col += 1;
+        //     }
+        //
+        //     virt_row += 1;
+        //     // skip '\n'
+        //     idx += 1;
+        // }
+        //
+        // // because of the last + 1 of the while.
+        // self.cursor.row = @min(virt_row -| 2, self.cursor.row);
+        // self.top = @min(self.top, row -| 2);
 
-        while (splits.next()) |chunk| : (row +|= 1) {
-            if (row < self.top) {
-                idx += @intCast(chunk.len + 1);
-                continue;
-            }
+        // need additional checking
+        const lines_count = self.buff.lines.items.len;
 
-            if (row > self.top + editorHeight) {
-                break;
-            }
-
-            if (chunk.len == 0) {
-                if (self.cursor.row == virt_row) {
-                    try self.buff.moveGap(idx);
-                    self.cursor.col = 0;
-                    self.left = 0;
-                }
-            }
-
-            var virt_col: u16 = 0;
-            for (0..chunk.len) |col| {
-                if (self.left > col) {
-                    idx += 1;
-                    continue;
-                }
-
-                if (virt_row == self.cursor.row) {
-                    if (self.mode == Vimz.Types.Mode.Normal) {
-                        self.cursor.col = @min(chunk.len - 1 -| self.left, self.cursor.col);
-                    }
-
-                    if (self.cursor.col == virt_col) {
-                        try self.buff.moveGap(idx);
-                    }
-                }
-                idx += 1;
-
-                // Solves the case where we press 'a' and the cursor is at the last
-                // element in the row
-                if (self.cursor.row == virt_row and self.cursor.col == chunk.len - 1 -| self.left) {
-                    try self.buff.moveGap(idx);
-                }
-                virt_col += 1;
-            }
-
-            virt_row += 1;
-            // skip '\n'
-            idx += 1;
+        if (self.cursor.abs_row > lines_count -| 1) {
+            self.cursor.abs_row = lines_count -| 2;
+            self.top = @min(self.top, lines_count -| 2);
+            self.cursor.row = @intCast(self.cursor.abs_row -| self.top);
         }
 
-        // because of the last + 1 of the while.
-        self.cursor.row = @min(virt_row -| 2, self.cursor.row);
-        self.top = @min(self.top, row -| 2);
+        const line = try self.buff.getLineInfo(self.cursor.abs_row);
+
+        if (line.len == 0) {}
+        if (self.cursor.abs_col > line.len) {
+            self.cursor.abs_col = line.len -| 1;
+            self.cursor.col = @intCast(self.cursor.abs_col -| self.left);
+        }
+
+        if (self.mode == Vimz.Types.Mode.Normal) {
+            self.cursor.col = @min(line.len -| 1 -| self.left, self.cursor.col);
+            self.cursor.abs_col = self.cursor.col + self.left;
+        }
+
+        try self.buff.moveGap(line.offset + self.cursor.abs_col);
     }
 
     pub fn draw(self: *Self, editorWin: *vaxis.Window) !void {
-        var splits = std.mem.split(CharType, try self.getBuff(), "\n");
+        // var splits = std.mem.split(CharType, try self.getBuff(), "\n");
+        //
+        // var row: usize = 0;
+        // var virt_row: u16 = 0;
 
-        var row: usize = 0;
+        // while (splits.next()) |chunk| : (row +|= 1) {
+        //     if (row < self.top) {
+        //         continue;
+        //     }
+        //
+        //     if (row > self.top + editorWin.height) {
+        //         break;
+        //     }
+        //
+        //     var virt_col: u16 = 0;
+        //     for (0..chunk.len) |col| {
+        //         if (col < self.left) {
+        //             continue;
+        //         }
+        //
+        //         editorWin.writeCell(virt_col, virt_row, vaxis.Cell{ .char = .{
+        //             .grapheme = chunk[col .. col + 1],
+        //         }, .style = .{ .fg = self.fg } });
+        //         virt_col += 1;
+        //     }
+        //
+        //     virt_row += 1;
+        // }
+
         var virt_row: u16 = 0;
-
-        while (splits.next()) |chunk| : (row +|= 1) {
-            if (row < self.top) {
-                continue;
-            }
-
-            if (row > self.top + editorWin.height) {
+        for (self.top..self.top + editorWin.height) |row| {
+            if (row > self.buff.lines.items.len -| 1) {
                 break;
             }
+            const line = try self.buff.getLineInfo(row);
 
             var virt_col: u16 = 0;
-            for (0..chunk.len) |col| {
+            for (0..line.len) |col| {
                 if (col < self.left) {
                     continue;
                 }
 
+                const idx = try self.buff.getIdx(row, col);
+                const slice = self.buff.buffer[idx .. idx + 1];
                 editorWin.writeCell(virt_col, virt_row, vaxis.Cell{ .char = .{
-                    .grapheme = chunk[col .. col + 1],
+                    .grapheme = slice,
                 }, .style = .{ .fg = self.fg } });
                 virt_col += 1;
             }
@@ -230,11 +250,69 @@ pub const Editor = struct {
         }
     }
 
+    // TODO: Define Actions enum, and then call a function with the
+    // actions we want to do, this prevents code duplications
+    //
+
+    pub const Action = union(enum) {
+        MoveUp: usize,
+        MoveDown: usize,
+        MoveLeft: usize,
+        MoveRight: usize,
+        ChangeMode: Vimz.Types.Mode,
+        Quit: void,
+        ScrollHalfPageUp: void,
+        ScrollHalfPageDown: void,
+        DeleteWord: void,
+        DeleteInsideWord: void,
+        InsertNewLine: void,
+        Write: []const CharType,
+        DeleteAroundWord: void,
+        DeleteBackwards: struct { searchPolicy: GapBuffer.SearchPolicy },
+        DeleteForwards: struct { searchPolicy: GapBuffer.SearchPolicy },
+
+        pub fn execute(self: Action, editor: *Editor) !void {
+            switch (self) {
+                .MoveLeft => |x| {
+                    editor.moveLeft(@intCast(x));
+                },
+                .MoveRight => |x| {
+                    editor.moveRight(@intCast(x));
+                },
+                .MoveDown => |x| {
+                    editor.moveDown(@intCast(x));
+                },
+                .MoveUp => |x| {
+                    editor.moveUp(@intCast(x));
+                },
+                .Quit => {
+                    var app = try Vimz.App.getInstance();
+                    app.quit = true;
+                },
+                .ChangeMode => |mode| {
+                    editor.mode = mode;
+                },
+                .ScrollHalfPageUp => {
+                    editor.top -|= editor.win_opts.height.? / 2;
+                    editor.tryScroll();
+                },
+                .ScrollHalfPageDown => {
+                    editor.top +|= editor.win_opts.height.? / 2;
+                    editor.tryScroll();
+                },
+                .Write => |text| {
+                    try editor.buff.write(text);
+                    editor.moveRight(1);
+                },
+                inline else => {},
+            }
+        }
+    };
+
     pub fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
-        self.need_realloc = true;
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
-            self.mode = Vimz.Types.Mode.Normal;
-            self.moveLeft(1);
+            try Action.execute(Action{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
+            try Action.execute(.{ .MoveLeft = 1 }, self);
         } else if (key.matches(vaxis.Key.enter, .{})) {
             try self.buff.write("\n");
             self.moveDown(1);
@@ -249,33 +327,27 @@ pub const Editor = struct {
             }
             try self.buff.deleteBackwards(GapBuffer.SearchPolicy{ .Number = 1 }, true);
         } else if (key.text) |text| {
-            try self.buff.write(text);
-            self.moveRight(1);
+            try Action.execute(Action{ .Write = text }, self);
         }
     }
     pub fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('l', .{})) {
-            self.moveRight(1);
+            try Action.execute(Action{ .MoveRight = 1 }, self);
         } else if (key.matches('j', .{})) {
-            self.moveDown(1);
+            try Action.execute(Action{ .MoveDown = 1 }, self);
         } else if (key.matches('h', .{})) {
-            self.moveLeft(1);
+            try Action.execute(Action{ .MoveLeft = 1 }, self);
         } else if (key.matches('k', .{})) {
-            self.moveUp(1);
+            try Action.execute(Action{ .MoveUp = 1 }, self);
         } else if (key.matches('q', .{})) {
-            var app = try Vimz.App.getInstance();
-            app.quit = true;
-        } else if (key.matches('i', .{})) {
-            self.mode = Vimz.Types.Mode.Insert;
-        } else if (key.matches('a', .{})) {
-            self.mode = Vimz.Types.Mode.Insert;
-            self.moveRight(1);
+            try Action.execute(Action{ .Quit = void{} }, self);
+        } else if (key.matchesAny(&.{ 'i', 'a' }, .{})) {
+            try Action.execute(Action{ .ChangeMode = Vimz.Types.Mode.Insert }, self);
+            if (key.matches('a', .{})) try Action.execute(.{ .MoveRight = 1 }, self);
         } else if (key.matches('d', .{ .ctrl = true })) {
-            self.top +|= self.win_opts.height.? / 2;
+            try Action.execute(Action{ .ScrollHalfPageDown = void{} }, self);
         } else if (key.matches('u', .{ .ctrl = true })) {
-            self.top -|= self.win_opts.height.? / 2;
-        } else if (key.matches('x', .{})) {
-            try self.buff.deleteForwards(GapBuffer.SearchPolicy{ .Number = 1 }, false);
+            try Action.execute(Action{ .ScrollHalfPageUp = void{} }, self);
         }
     }
 };

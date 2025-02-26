@@ -11,14 +11,14 @@ pub fn addComps() !void {
         .Left,
     );
 
-    try Api.addStatusLineComp(
-        .{
-            .update_func = &updateGitBranch,
-            .update_on_redraw = false,
-        },
-        .Left,
-    );
-
+    // try Api.addStatusLineComp(
+    //     .{
+    //         .update_func = &updateGitBranch,
+    //         .update_on_redraw = false,
+    //     },
+    //     .Left,
+    // );
+    //
     try Api.addStatusLineComp(
         .{
             .update_func = &updateRowCol,
