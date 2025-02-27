@@ -168,7 +168,7 @@ pub const App = struct {
 
         // Settings
         try self.vx.enterAltScreen(self.tty.anyWriter());
-        try self.vx.queryTerminal(self.tty.anyWriter(), 0.5 * std.time.ns_per_s);
+        try self.vx.queryTerminal(self.tty.anyWriter(), 0.1 * std.time.ns_per_s);
 
         try self.statusLine.setup();
 

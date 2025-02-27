@@ -273,6 +273,9 @@ pub const Editor = struct {
         } else if (key.matches('d', .{})) {
             try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
             try self.pending_cmd_queue.append(@intCast(key.codepoint));
+        } else if (key.matches('o', .{})) {
+            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
+            try self.pending_cmd_queue.append(@intCast(key.codepoint));
         }
     }
 

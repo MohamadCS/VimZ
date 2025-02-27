@@ -15,6 +15,7 @@ pub const StatusLine = struct {
     right_comps: std.ArrayList(Component),
     allocator: std.mem.Allocator,
     win_opts: vaxis.Window.ChildOptions,
+    mutex: std.Thread.Mutex = .{},
 
     async_thread: struct {
         thread: std.Thread = undefined,
@@ -38,22 +39,25 @@ pub const StatusLine = struct {
         .fg = .{ .rgb = .{ 87, 82, 121 } },
     },
 
+    const Self = @This();
+
     pub fn work() !void {
         var app = try Vimz.App.getInstance();
 
         while (!app.quit) {
+            app.statusLine.mutex.lock();
             try app.statusLine.updateAsync();
+            app.statusLine.mutex.unlock();
             try app.enqueueEvent(Vimz.Types.Event{ .refresh_status_line = void{} });
             std.time.sleep(1 * std.time.ns_per_s);
         }
     }
-    const Self = @This();
 
     pub fn setup(self: *Self) !void {
-        // try self.async_thread.setup();
+        try self.async_thread.setup();
         try comps.addComps();
         _ = self.win_opts;
-        //    // self.async_thread.thread = try std.Thread.spawn(.{}, StatusLine.work, .{});
+        self.async_thread.thread = try std.Thread.spawn(.{}, StatusLine.work, .{});
     }
 
     pub fn init(allocator: std.mem.Allocator) !Self {
@@ -93,6 +97,8 @@ pub const StatusLine = struct {
     };
 
     pub fn deinit(self: *Self) void {
+        // self.async_thread.thread.join();
+
         for (self.left_comps.items) |*comp| {
             if (comp.text) |text| {
                 if (comp.async_update) {
@@ -115,7 +121,7 @@ pub const StatusLine = struct {
 
         self.left_comps.deinit();
         self.right_comps.deinit();
-        // self.async_thread.deinit();
+        self.async_thread.deinit();
     }
 
     pub fn addComp(self: *Self, comp: Component, pos: Position) !void {
@@ -151,13 +157,13 @@ pub const StatusLine = struct {
     pub fn draw(self: *Self, win: *vaxis.Window) !void {
         win.fill(.{ .style = self.style });
 
-        var curr_col_offset: u16 = 0;
+        self.mutex.lock();
 
+        var curr_col_offset: u16 = 0;
         for (self.left_comps.items) |*comp| {
             if (!comp.async_update) {
                 try comp.update_func(comp);
             }
-
             if (!comp.hide) {
                 curr_col_offset += comp.left_padding;
                 _ = win.printSegment(vaxis.Segment{
@@ -186,5 +192,7 @@ pub const StatusLine = struct {
                 curr_col_offset = col_offset -| comp.left_padding;
             }
         }
+
+        self.mutex.unlock();
     }
 };

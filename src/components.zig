@@ -1,10 +1,10 @@
 const Api = @import("api.zig");
 const std = @import("std");
 const utils = @import("utils.zig");
-
 const Vimz = Api.Vimz;
 
 pub fn addComps() !void {
+
     try Api.addStatusLineComp(
         .{
             .update_func = &updateMode,
@@ -12,6 +12,13 @@ pub fn addComps() !void {
         .Left,
     );
 
+    try Api.addStatusLineComp(
+        .{
+            .update_func = &updateGitBranch,
+            .async_update = true,
+        },
+        .Left,
+    );
 
     try Api.addStatusLineComp(
         .{
