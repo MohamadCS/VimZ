@@ -27,6 +27,21 @@ pub fn getCursorState() !Types.CursorState {
     return app.editor.cursor;
 }
 
+pub fn getPendingCommand() ![]u8 {
+    const app = try Vimz.App.getInstance();
+    return app.editor.pending_cmd_queue.items;
+}
+
+pub fn getAbsCursorCol() !usize {
+    const app = try Vimz.App.getInstance();
+    return app.editor.getAbsCol();
+}
+
+pub fn getAbsCursorRow() !usize {
+    const app = try Vimz.App.getInstance();
+    return app.editor.getAbsRow();
+}
+
 pub fn getAllocator() !std.mem.Allocator {
     const app = try Vimz.App.getInstance();
     return app.allocator;

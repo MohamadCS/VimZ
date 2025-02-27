@@ -30,7 +30,8 @@ pub fn GapBuffer(comptime T: type) type {
         /// The index of the start of the gap
         gap_start: usize,
 
-        dirty: bool = false,
+        dirty: bool = true,
+
 
         /// The index of the end of the gap
         gap_end: usize,
@@ -38,14 +39,14 @@ pub fn GapBuffer(comptime T: type) type {
         lines: std.ArrayList(Line),
 
         /// The gap size when init() is called
-        const init_size = 10;
+        const init_size = 100;
 
         /// Guranteed writing memory before calling resize again
         const min_gap_size = 100;
 
         const Self = @This();
 
-        const Line = struct {
+        pub const Line = struct {
             len: usize,
             index: usize,
             offset: usize,
@@ -70,15 +71,6 @@ pub fn GapBuffer(comptime T: type) type {
             return self.gap_end - self.gap_start + 1;
         }
 
-        pub inline fn getSlicedCharAt(self: *Self, row: usize, col: usize) ![]T {
-            const idx = try self.getIdx(row, col);
-            return self.buffer[idx .. idx + 1];
-        }
-
-        pub inline fn getCharAt(self: *Self, row: usize, col: usize) !T {
-            const idx = try self.getIdx(row, col);
-            return self.buffer[idx];
-        }
 
         /// Moves the cursror to new_gap_idx,
         /// The function does not alloc memory
@@ -118,11 +110,7 @@ pub fn GapBuffer(comptime T: type) type {
             }
         }
 
-        /// Writes a data slice begining at the current cursor index
-        /// if there is the gap size is not enought, then it will
-        /// allocate new memory and replace the pointer to
-        /// the buffer's slice.
-        pub fn updateLines(self: *Self) !void {
+        fn updateLines(self: *Self) !void {
             self.lines.deinit();
             self.lines = std.ArrayList(Line).init(self.allocator);
 
@@ -162,6 +150,10 @@ pub fn GapBuffer(comptime T: type) type {
             try self.lines.append(Line{ .offset = offset, .index = line_idx, .len = len });
         }
 
+        /// Writes a data slice begining at the current cursor index
+        /// if there is the gap size is not enought, then it will
+        /// allocate new memory and replace the pointer to
+        /// the buffer's slice.
         pub fn write(self: *Self, data_slice: []const T) !void {
             self.dirty = true;
             if (self.gapSize() <= data_slice.len) {
@@ -225,6 +217,7 @@ pub fn GapBuffer(comptime T: type) type {
         // BUG : dont delete the delimter
         pub fn deleteForwards(self: *Self, searchPolicy: SearchPolicy, includeDelimiter: bool) !void {
             // TODO: Shrink the gap after a certain threshold.
+            self.dirty = true;
 
             switch (searchPolicy) {
                 .Number => |num| {
@@ -250,6 +243,15 @@ pub fn GapBuffer(comptime T: type) type {
                 },
                 else => unreachable,
             }
+        }
+
+        pub inline fn getLineInfo(self: *Self, line: usize) !Line {
+            if (self.dirty) {
+                try self.updateLines();
+                self.dirty = false;
+            }
+
+            return self.lines.items[line];
         }
 
         // BUG : dont delete the delimter
@@ -329,15 +331,6 @@ pub fn GapBuffer(comptime T: type) type {
             }
 
             return Error.NotFound;
-        }
-
-        pub inline fn getLineInfo(self: *Self, line: usize) !Line {
-            if (self.dirty) {
-                try self.updateLines();
-                self.dirty = false;
-            }
-
-            return self.lines.items[line];
         }
 
         pub inline fn getIdx(self: *Self, row: usize, col: usize) !usize {

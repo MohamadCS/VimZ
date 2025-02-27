@@ -1,6 +1,7 @@
 const Api = @import("api.zig");
 const std = @import("std");
 const utils = @import("utils.zig");
+
 const Vimz = Api.Vimz;
 
 pub fn addComps() !void {
@@ -11,17 +12,17 @@ pub fn addComps() !void {
         .Left,
     );
 
-    // try Api.addStatusLineComp(
-    //     .{
-    //         .update_func = &updateGitBranch,
-    //         .update_on_redraw = false,
-    //     },
-    //     .Left,
-    // );
-    //
+
     try Api.addStatusLineComp(
         .{
             .update_func = &updateRowCol,
+        },
+        .Right,
+    );
+
+    try Api.addStatusLineComp(
+        .{
+            .update_func = &updatePendingCommand,
         },
         .Right,
     );
@@ -40,6 +41,10 @@ fn updateMode(comp: *Api.StatusLine.Component) !void {
             text = "INSERT";
             comp.style.?.fg = .{ .rgb = .{ 86, 148, 159 } };
         },
+        .Pending => {
+            text = "O-PENDING";
+            comp.style.?.fg = .{ .rgb = .{ 215, 130, 126 } };
+        },
     }
 
     comp.style.?.bold = true;
@@ -48,10 +53,14 @@ fn updateMode(comp: *Api.StatusLine.Component) !void {
 }
 
 fn updateRowCol(comp: *Api.StatusLine.Component) !void {
-    const cursor_state = try Api.getCursorState();
-    try comp.setText("{}:{}", .{ cursor_state.abs_row + 1, cursor_state.abs_col + 1 });
+    try comp.setText("{}:{}", .{ try Api.getAbsCursorRow() + 1, try Api.getAbsCursorCol() + 1 });
     comp.style.?.fg = .{ .rgb = .{ 215, 130, 126 } };
     comp.style.?.bold = true;
+}
+
+fn updatePendingCommand(comp: *Api.StatusLine.Component) !void {
+    try comp.setText("{s}", .{try Api.getPendingCommand()});
+    comp.style.?.fg = .{ .rgb = .{ 215, 130, 126 } };
 }
 
 fn updateGitBranch(comp: *Api.StatusLine.Component) !void {
@@ -67,14 +76,15 @@ fn updateGitBranch(comp: *Api.StatusLine.Component) !void {
     const alloc = gpa.allocator();
     const text = utils.getGitBranch(alloc) catch {
         comp.hide = true;
+        comp.text = null;
         return;
     };
+
+    defer alloc.free(text);
 
     comp.hide = false;
 
     try comp.setText(" {s}", .{
         text,
     });
-
-    alloc.free(text);
 }

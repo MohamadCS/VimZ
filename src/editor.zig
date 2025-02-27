@@ -2,24 +2,30 @@ const std = @import("std");
 const vaxis = @import("vaxis");
 const utils = @import("utils.zig");
 const Vimz = @import("app.zig");
-
-const CharType: type = u8;
-pub const GapBuffer = @import("gap_buffer.zig").GapBuffer(CharType);
+const TextBuffer = @import("text_buffer.zig").TextBuffer;
 
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.main);
+
+const Cmds = std.StaticStringMap(Editor.Motion).initComptime(.{
+    .{ "diw", .DeleteWord },
+    .{ "daw", .DeleteAroundWord },
+    .{ "dd", .DeleteLine },
+});
 
 // Devide to App and State
 pub const Editor = struct {
     allocator: Allocator,
 
-    buff: GapBuffer,
+    text_buffer: TextBuffer,
 
     top: usize,
 
     left: usize,
 
     mode: Vimz.Types.Mode,
+
+    pending_cmd_queue: std.ArrayList(u8),
 
     cursor: Vimz.Types.CursorState,
 
@@ -35,16 +41,26 @@ pub const Editor = struct {
     pub fn init(allocator: Allocator) !Self {
         return Self{
             .allocator = allocator,
-            .buff = try GapBuffer.init(allocator),
+            .text_buffer = try TextBuffer.init(allocator),
             .mode = Vimz.Types.Mode.Normal,
             .cursor = .{},
+            .pending_cmd_queue = std.ArrayList(u8).init(allocator),
             .top = 0,
             .left = 0,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.buff.deinit();
+        self.text_buffer.deinit();
+        self.pending_cmd_queue.deinit();
+    }
+
+    pub inline fn getAbsCol(self: Self) usize {
+        return self.cursor.col + self.left;
+    }
+
+    pub inline fn getAbsRow(self: Self) usize {
+        return self.cursor.row + self.top;
     }
 
     fn tryScroll(self: *Self) void {
@@ -63,15 +79,6 @@ pub const Editor = struct {
             self.left -= 1;
             self.cursor.col +|= 1;
         }
-
-        self.cursor.abs_col = self.left + self.cursor.col;
-        self.cursor.abs_row = self.top + self.cursor.row;
-    }
-
-    pub fn moveAbs(self: *Self, col: u16, row: u16) !void {
-        self.cursor.row = row;
-        self.cursor.col = col;
-        self.tryScroll();
     }
 
     pub fn moveUp(self: *Self, steps: u16) void {
@@ -97,36 +104,32 @@ pub const Editor = struct {
     pub fn update(self: *Self) !void {
 
         // need additional checking
-        const lines_count = self.buff.lines.items.len;
+        const lines_count = self.text_buffer.getLineCount();
+        const max_row = lines_count -| 1;
 
-        if (self.cursor.abs_row > lines_count -| 1) {
-            self.cursor.abs_row = lines_count -| 2;
+        if (self.getAbsRow() > max_row) {
             self.top = @min(self.top, lines_count -| 2);
-            self.cursor.row = @intCast(self.cursor.abs_row -| self.top);
+            self.cursor.row = @intCast(max_row -| self.top -| 1);
         }
 
-        const line = try self.buff.getLineInfo(self.cursor.abs_row);
-
-        if (line.len == 0) {}
-        if (self.cursor.abs_col > line.len) {
-            self.cursor.abs_col = line.len -| 1;
-            self.left = @min(self.left, line.len -| 1);
-            self.cursor.col = @intCast(self.cursor.abs_col -| self.left);
-        }
+        const line = try self.text_buffer.getLineInfo(self.getAbsRow());
+        const max_col = line.len;
 
         if (self.mode == Vimz.Types.Mode.Normal) {
-            self.cursor.col = @min(line.len -| 1 -| self.left, self.cursor.col);
-            self.cursor.abs_col = self.cursor.col + self.left;
+            if (self.getAbsCol() >= max_col) {
+                self.left = @min(self.left, max_col -| 1);
+                self.cursor.col = @intCast(max_col -| self.left -| 1);
+            }
         }
 
-        try self.buff.moveGap(line.offset + self.cursor.abs_col);
+        try self.text_buffer.moveCursor(self.getAbsRow(), self.getAbsCol());
     }
 
     pub fn draw(self: *Self, editorWin: *vaxis.Window) !void {
-        const max_row = @min(self.top + editorWin.height, self.buff.lines.items.len -| 1);
+        const max_row = @min(self.top + editorWin.height, self.text_buffer.getLineCount() -| 1);
 
         for (self.top..max_row, 0..) |row, virt_row| {
-            const line = try self.buff.getLineInfo(row);
+            const line = try self.text_buffer.getLineInfo(row);
 
             if (line.len < self.left) {
                 continue;
@@ -137,7 +140,7 @@ pub const Editor = struct {
             const end = @min(start + editorWin.width, line.len);
             for (start..end, 0..) |col, virt_col| {
                 editorWin.writeCell(@intCast(virt_col), @intCast(virt_row), vaxis.Cell{ .char = .{
-                    .grapheme = try self.buff.getSlicedCharAt(row, col),
+                    .grapheme = try self.text_buffer.getSlicedCharAt(row, col),
                 }, .style = .{ .fg = self.fg } });
             }
         }
@@ -149,6 +152,7 @@ pub const Editor = struct {
         switch (self.mode) {
             .Normal => try self.handleNormalMode(key),
             .Insert => try self.handleInsertMode(key),
+            .Pending => try self.handlePendingCommand(key),
         }
     }
 
@@ -156,7 +160,7 @@ pub const Editor = struct {
     // actions we want to do, this prevents code duplications
     //
 
-    pub const Action = union(enum) {
+    pub const Motion = union(enum) {
         MoveUp: usize,
         MoveDown: usize,
         MoveLeft: usize,
@@ -166,14 +170,15 @@ pub const Editor = struct {
         ScrollHalfPageUp: void,
         ScrollHalfPageDown: void,
         DeleteWord: void,
+        DeleteAroundWord: void,
+        DeleteLine: void,
+        MoveToEndOfLine: void,
+        MoveToStartOfLine: void,
         DeleteInsideWord: void,
         InsertNewLine: void,
-        Write: []const CharType,
-        DeleteAroundWord: void,
-        DeleteBackwards: struct { searchPolicy: GapBuffer.SearchPolicy },
-        DeleteForwards: struct { searchPolicy: GapBuffer.SearchPolicy },
+        WirteAtCursor: []const TextBuffer.CharType,
 
-        pub fn execute(self: Action, editor: *Editor) !void {
+        pub fn exec(self: Motion, editor: *Editor) !void {
             switch (self) {
                 .MoveLeft => |x| {
                     editor.moveLeft(@intCast(x));
@@ -187,12 +192,17 @@ pub const Editor = struct {
                 .MoveUp => |x| {
                     editor.moveUp(@intCast(x));
                 },
+                .MoveToEndOfLine => {},
+                .MoveToStartOfLine => {},
                 .Quit => {
                     var app = try Vimz.App.getInstance();
                     app.quit = true;
                 },
                 .ChangeMode => |mode| {
                     editor.mode = mode;
+                },
+                .DeleteLine => {
+                    try editor.text_buffer.deleteLine(editor.getAbsRow());
                 },
                 .ScrollHalfPageUp => {
                     editor.top -|= editor.win_opts.height.? / 2;
@@ -202,8 +212,8 @@ pub const Editor = struct {
                     editor.top +|= editor.win_opts.height.? / 2;
                     editor.tryScroll();
                 },
-                .Write => |text| {
-                    try editor.buff.write(text);
+                .WirteAtCursor => |text| {
+                    try editor.text_buffer.insert(text, editor.getAbsRow(), editor.getAbsCol());
                     editor.moveRight(1);
                 },
                 inline else => {},
@@ -213,43 +223,77 @@ pub const Editor = struct {
 
     pub fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
-            try Action.execute(Action{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
-            try Action.execute(.{ .MoveLeft = 1 }, self);
+            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
+            try Motion.exec(.{ .MoveLeft = 1 }, self);
         } else if (key.matches(vaxis.Key.enter, .{})) {
-            try self.buff.write("\n");
-            self.moveDown(1);
-            self.left = 0;
-            self.cursor.col = 0;
-        } else if (key.matches(vaxis.Key.backspace, .{})) {
-            if (self.cursor.col == 0) {
-                self.moveUp(1);
-                // Go to the end of the last line
-            } else {
-                self.moveLeft(1);
-            }
-            try self.buff.deleteBackwards(GapBuffer.SearchPolicy{ .Number = 1 }, true);
-        } else if (key.text) |text| {
-            try Action.execute(Action{ .Write = text }, self);
+            try self.text_buffer.insert("\n", self.getAbsRow(), self.getAbsCol());
+            try Motion.exec(.{ .MoveDown = 1 }, self);
+        }
+        // else if (key.matches(vaxis.Key.backspace, .{})) {
+        //     if (self.cursor.col == 0) {
+        //         self.moveUp(1);
+        //         // Go to the end of the last line
+        //     } else {
+        //         self.moveLeft(1);
+        //     }
+        //     try self.buff.deleteBackwards(GapBuffer.SearchPolicy{ .Number = 1 }, true);
+        // }
+        else if (key.text) |text| {
+            try Motion.exec(Motion{ .WirteAtCursor = text }, self);
         }
     }
+
     pub fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('l', .{})) {
-            try Action.execute(Action{ .MoveRight = 1 }, self);
+            try Motion.exec(Motion{ .MoveRight = 1 }, self);
         } else if (key.matches('j', .{})) {
-            try Action.execute(Action{ .MoveDown = 1 }, self);
+            try Motion.exec(Motion{ .MoveDown = 1 }, self);
         } else if (key.matches('h', .{})) {
-            try Action.execute(Action{ .MoveLeft = 1 }, self);
+            try Motion.exec(Motion{ .MoveLeft = 1 }, self);
         } else if (key.matches('k', .{})) {
-            try Action.execute(Action{ .MoveUp = 1 }, self);
+            try Motion.exec(Motion{ .MoveUp = 1 }, self);
         } else if (key.matches('q', .{})) {
-            try Action.execute(Action{ .Quit = void{} }, self);
+            try Motion.exec(Motion{ .Quit = void{} }, self);
         } else if (key.matchesAny(&.{ 'i', 'a' }, .{})) {
-            try Action.execute(Action{ .ChangeMode = Vimz.Types.Mode.Insert }, self);
-            if (key.matches('a', .{})) try Action.execute(.{ .MoveRight = 1 }, self);
+            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Insert }, self);
+            if (key.matches('a', .{})) {
+                const line = try self.text_buffer.getLineInfo(self.getAbsRow());
+                if (line.len > 0) {
+                    try Motion.exec(.{ .MoveRight = 1 }, self);
+                }
+            }
         } else if (key.matches('d', .{ .ctrl = true })) {
-            try Action.execute(Action{ .ScrollHalfPageDown = void{} }, self);
+            try Motion.exec(Motion{ .ScrollHalfPageDown = void{} }, self);
         } else if (key.matches('u', .{ .ctrl = true })) {
-            try Action.execute(Action{ .ScrollHalfPageUp = void{} }, self);
+            try Motion.exec(Motion{ .ScrollHalfPageUp = void{} }, self);
+        } else if (key.matches('$', .{})) {
+            try Motion.exec(Motion{ .MoveToEndOfLine = void{} }, self);
+        } else if (key.matches('0', .{})) {
+            try Motion.exec(Motion{ .MoveToStartOfLine = void{} }, self);
+        } else if (key.matches('d', .{})) {
+            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
+            try self.pending_cmd_queue.append(@intCast(key.codepoint));
+        }
+    }
+
+    // TODO : Find a better command handling system, for example a state machine
+    pub fn handlePendingCommand(self: *Self, key: vaxis.Key) !void {
+        try self.pending_cmd_queue.append(@intCast(key.codepoint));
+        // For testing purposes
+        if (self.pending_cmd_queue.items.len > 5) {
+            self.pending_cmd_queue.deinit();
+            self.pending_cmd_queue = std.ArrayList(u8).init(self.allocator);
+
+            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
+            return;
+        }
+
+        if (Cmds.get(self.pending_cmd_queue.items)) |cmd| {
+            try Motion.exec(cmd, self);
+            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
+
+            self.pending_cmd_queue.deinit();
+            self.pending_cmd_queue = std.ArrayList(u8).init(self.allocator);
         }
     }
 };

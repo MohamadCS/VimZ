@@ -45,7 +45,9 @@ pub const App = struct {
         };
     }
 
-    pub var instance: ?Self = null;
+    // Singleton for simplicity.
+    // Find a better way later.
+    var instance: ?Self = null;
     pub fn getInstance() !*Self {
         if (App.instance) |*app| {
             return app;
@@ -111,9 +113,7 @@ pub const App = struct {
                 // If other windows can handle input then switch on the current state
                 try self.editor.handleInput(key);
             },
-            .refresh_status_line => {
-                self.statusLine.update_all = true;
-            },
+            .refresh_status_line => {},
         }
     }
 
@@ -138,8 +138,8 @@ pub const App = struct {
         defer self.allocator.free(file_contents);
 
         // TODO: App should not access editor's buff directly
-        try self.editor.buff.write(file_contents);
-        try self.editor.buff.moveGap(0);
+        try self.editor.text_buffer.insert(file_contents, self.editor.getAbsRow(), self.editor.getAbsCol());
+        try self.editor.text_buffer.moveCursor(0, 0);
     }
 
     pub fn update(self: *Self) !void {
@@ -170,8 +170,7 @@ pub const App = struct {
         try self.vx.enterAltScreen(self.tty.anyWriter());
         try self.vx.queryTerminal(self.tty.anyWriter(), 0.5 * std.time.ns_per_s);
 
-        try Comps.addComps();
-        self.statusLine.update_all = true;
+        try self.statusLine.setup();
 
         while (!self.quit) {
             self.loop.pollEvent();
