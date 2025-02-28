@@ -5,7 +5,7 @@ knowlege in Zig.
 
 ## Build
 ```bash
-zig build 
+zig build --release=fast
 ```
 
 ## Usage
