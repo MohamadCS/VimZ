@@ -32,10 +32,10 @@ pub fn GapBuffer(comptime T: type) type {
 
         dirty: bool = true,
 
-
         /// The index of the end of the gap
         gap_end: usize,
 
+        /// Lines metadata
         lines: std.ArrayList(Line),
 
         /// The gap size when init() is called
@@ -70,7 +70,6 @@ pub fn GapBuffer(comptime T: type) type {
         inline fn gapSize(self: *Self) usize {
             return self.gap_end - self.gap_start + 1;
         }
-
 
         /// Moves the cursror to new_gap_idx,
         /// The function does not alloc memory
@@ -111,6 +110,10 @@ pub fn GapBuffer(comptime T: type) type {
         }
 
         fn updateLines(self: *Self) !void {
+            if (!self.dirty) {
+                return;
+            }
+            self.dirty = false;
             self.lines.deinit();
             self.lines = std.ArrayList(Line).init(self.allocator);
 
@@ -148,6 +151,11 @@ pub fn GapBuffer(comptime T: type) type {
             }
 
             try self.lines.append(Line{ .offset = offset, .index = line_idx, .len = len });
+        }
+
+        pub fn getLines(self: *Self) ![]Line {
+            try self.updateLines();
+            return self.lines.items;
         }
 
         /// Writes a data slice begining at the current cursor index
@@ -246,11 +254,7 @@ pub fn GapBuffer(comptime T: type) type {
         }
 
         pub inline fn getLineInfo(self: *Self, line: usize) !Line {
-            if (self.dirty) {
-                try self.updateLines();
-                self.dirty = false;
-            }
-
+            try self.updateLines();
             return self.lines.items[line];
         }
 
@@ -334,10 +338,7 @@ pub fn GapBuffer(comptime T: type) type {
         }
 
         pub inline fn getIdx(self: *Self, row: usize, col: usize) !usize {
-            if (self.dirty) {
-                try self.updateLines();
-                self.dirty = false;
-            }
+            try self.updateLines();
 
             assert(row < self.lines.items.len);
 
@@ -354,11 +355,9 @@ pub fn GapBuffer(comptime T: type) type {
             }
         }
 
+        // TODO: Do we need this function ?
         pub fn getLine(self: *Self, allocator: Allocator, idx: usize) ![]T {
-            if (self.dirty) {
-                try self.updateLines();
-                self.dirty = false;
-            }
+            try self.updateLines();
 
             var resultLine = try allocator.alloc(T, self.lines.items[idx].len);
             const line = self.lines.items[idx];
@@ -442,9 +441,21 @@ test " update Lines" {
     try gap_buffer.write(str);
 
     try gap_buffer.moveGap(50);
+}
+
+test "empty Lines" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        _ = gpa.deinit();
+    }
+
+    const alloc = gpa.allocator();
+
+    var gap_buffer = try GapBuffer(u8).init(alloc);
+    defer gap_buffer.deinit();
+
+    _ = try gap_buffer.getLineInfo(0);
     gap_buffer.print();
-    std.debug.print("{s}", .{try gap_buffer.getLine(alloc, 0)});
-    std.debug.print("{s}", .{try gap_buffer.getLine(alloc, 1)});
-    std.debug.print("{s}", .{try gap_buffer.getLine(alloc, 2)});
-    std.debug.print("{s}", .{try gap_buffer.getLine(alloc, 3)});
+    try gap_buffer.write("hello");
+    gap_buffer.print();
 }

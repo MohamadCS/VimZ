@@ -104,10 +104,10 @@ pub const Editor = struct {
     pub fn update(self: *Self) !void {
 
         // need additional checking
-        const lines_count = self.text_buffer.getLineCount();
+        const lines_count = try self.text_buffer.getLineCount();
         const max_row = lines_count -| 1;
 
-        if (self.getAbsRow() > max_row) {
+        if (self.getAbsRow() >= max_row) {
             self.top = @min(self.top, lines_count -| 2);
             self.cursor.row = @intCast(max_row -| self.top -| 1);
         }
@@ -126,7 +126,7 @@ pub const Editor = struct {
     }
 
     pub fn draw(self: *Self, editorWin: *vaxis.Window) !void {
-        const max_row = @min(self.top + editorWin.height, self.text_buffer.getLineCount() -| 1);
+        const max_row = @min(self.top + editorWin.height, try self.text_buffer.getLineCount());
 
         for (self.top..max_row, 0..) |row, virt_row| {
             const line = try self.text_buffer.getLineInfo(row);
@@ -271,9 +271,6 @@ pub const Editor = struct {
         } else if (key.matches('0', .{})) {
             try Motion.exec(Motion{ .MoveToStartOfLine = void{} }, self);
         } else if (key.matches('d', .{})) {
-            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
-            try self.pending_cmd_queue.append(@intCast(key.codepoint));
-        } else if (key.matches('o', .{})) {
             try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
             try self.pending_cmd_queue.append(@intCast(key.codepoint));
         }

@@ -127,6 +127,7 @@ pub const App = struct {
             file_name = arg;
         } else {
             log.err("Must provide a file", .{});
+            return; 
         }
 
         self.file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
@@ -142,7 +143,7 @@ pub const App = struct {
         try self.editor.text_buffer.moveCursor(0, 0);
     }
 
-    pub fn update(self: *Self) !void {
+    fn update(self: *Self) !void {
         try self.updateDims();
         try self.editor.update();
     }

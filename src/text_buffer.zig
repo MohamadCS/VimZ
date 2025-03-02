@@ -24,8 +24,9 @@ pub const TextBuffer = struct {
         self.gap_buffer.deinit();
     }
 
-    pub fn getLineCount(self: *Self) usize {
-        return self.gap_buffer.lines.items.len;
+    pub fn getLineCount(self: *Self) !usize {
+        const lines = try self.gap_buffer.getLines();
+        return lines.len;
     }
 
     pub inline fn getLineInfo(self: *Self, line: usize) !GapBuffer.Line {

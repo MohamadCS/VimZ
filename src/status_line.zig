@@ -5,7 +5,7 @@ const Vimz = @import("app.zig");
 const comps = @import("components.zig");
 
 // TODO:
-// 1. Async
+// 1. Async - Done
 // 2. Custom theme insteaf of vaxis style
 // allowing for more control when no theme is selected
 // and for more customizable option.
@@ -99,22 +99,16 @@ pub const StatusLine = struct {
     pub fn deinit(self: *Self) void {
         // self.async_thread.thread.join();
 
-        for (self.left_comps.items) |*comp| {
-            if (comp.text) |text| {
-                if (comp.async_update) {
-                    self.async_thread.allocator.free(text);
-                } else {
-                    self.allocator.free(text);
-                }
-            }
-        }
+        const comp_lists_arr = [_][]Component{ self.left_comps.items, self.right_comps.items };
 
-        for (self.right_comps.items) |*comp| {
-            if (comp.text) |text| {
-                if (comp.async_update) {
-                    self.async_thread.allocator.free(text);
-                } else {
-                    self.allocator.free(text);
+        for (&comp_lists_arr) |comp_list| {
+            for (comp_list) |*comp| {
+                if (comp.text) |text| {
+                    if (comp.async_update) {
+                        self.async_thread.allocator.free(text);
+                    } else {
+                        self.allocator.free(text);
+                    }
                 }
             }
         }

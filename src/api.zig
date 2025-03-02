@@ -47,6 +47,7 @@ pub fn getAllocator() !std.mem.Allocator {
     return app.allocator;
 }
 
+
 pub fn addStatusLineComp(comp: StatusLine.Component, pos: StatusLine.Position) !void {
     var app = try Vimz.App.getInstance();
     try app.statusLine.addComp(comp, pos);
