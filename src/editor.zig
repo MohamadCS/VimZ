@@ -11,6 +11,7 @@ const Cmds = std.StaticStringMap(Editor.Motion).initComptime(.{
     .{ "diw", .DeleteWord },
     .{ "daw", .DeleteAroundWord },
     .{ "dd", .DeleteLine },
+    .{ "gg", .FirstLine },
 });
 
 // Devide to App and State
@@ -88,7 +89,7 @@ pub const Editor = struct {
             self.top = 0;
             self.cursor.row = @intCast(row);
         } else {
-            self.top = row -| self.cursor.col;
+            self.top = row -| self.cursor.row;
         }
 
         if (col < self.left + self.win_opts.width.? - 1 and col >= self.left) {
@@ -176,10 +177,6 @@ pub const Editor = struct {
         }
     }
 
-    // TODO: Define Actions enum, and then call a function with the
-    // actions we want to do, this prevents code duplications
-    //
-
     pub const Motion = union(enum) {
         MoveUp: usize,
         MoveDown: usize,
@@ -190,6 +187,8 @@ pub const Editor = struct {
         ScrollHalfPageUp: void,
         ScrollHalfPageDown: void,
         DeleteWord: void,
+        LastLine: void,
+        FirstLine: void,
         DeleteAroundWord: void,
         DeleteLine: void,
         NextWord: enum {
@@ -234,16 +233,21 @@ pub const Editor = struct {
                     try editor.text_buffer.deleteLine(editor.getAbsRow());
                 },
                 .ScrollHalfPageUp => {
-                    editor.top -|= editor.win_opts.height.? / 2;
-                    editor.tryScroll();
+                    editor.moveAbs(editor.getAbsRow() -| editor.win_opts.height.? / 2, editor.getAbsCol());
                 },
                 .ScrollHalfPageDown => {
-                    editor.top +|= editor.win_opts.height.? / 2;
-                    editor.tryScroll();
+                    editor.moveAbs(editor.getAbsRow() +| editor.win_opts.height.? / 2, editor.getAbsCol());
                 },
                 .WirteAtCursor => |text| {
                     try editor.text_buffer.insert(text, editor.getAbsRow(), editor.getAbsCol());
                     editor.moveRight(1);
+                },
+                .FirstLine => {
+                    editor.moveAbs(0, editor.getAbsCol());
+                },
+                .LastLine => {
+                    const line_count = try editor.text_buffer.getLineCount();
+                    editor.moveAbs(line_count -| 1, editor.getAbsCol());
                 },
                 .NextWord => |t| {
                     const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol(), switch (t) {
@@ -309,6 +313,11 @@ pub const Editor = struct {
         } else if (key.matches('d', .{})) {
             try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
             try self.pending_cmd_queue.append(@intCast(key.codepoint));
+        } else if (key.matches('g', .{})) {
+            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
+            try self.pending_cmd_queue.append(@intCast(key.codepoint));
+        } else if (key.matches('G', .{})) {
+            try Motion.exec(Motion{ .LastLine = void{} }, self);
         } else if (key.matches('w', .{})) {
             try Motion.exec(Motion{ .NextWord = .word }, self);
         } else if (key.matches('W', .{})) {

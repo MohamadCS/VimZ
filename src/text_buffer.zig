@@ -85,9 +85,24 @@ pub const TextBuffer = struct {
             }
         }
 
+        // BUG: last line always goes to the first col
         var stopAtNonWS: bool = false;
         for (col + 1..line.len) |i| {
             const curr_ch = try self.getCharAt(row, i);
+
+            if (i == line.len -| 1) {
+                if (row == line_count -| 1) {
+                    return .{
+                        .col = i,
+                        .row = row,
+                    };
+                } else {
+                    return .{
+                        .col = 0,
+                        .row = row + 1,
+                    };
+                }
+            }
 
             if (stopAtNonWS and curr_ch != ' ') {
                 return .{
@@ -109,36 +124,9 @@ pub const TextBuffer = struct {
                     };
                 }
             }
-
-            if (i == line.len -| 1) {
-                if (row == line_count -| 1) {
-                    return .{
-                        .col = col,
-                        .row = row,
-                    };
-                } else {
-                    return .{
-                        .col = 0,
-                        .row = row + 1,
-                    };
-                }
-            }
         }
 
-        if (col == line.len -| 1) {
-            if (row == line_count -| 1) {
-                return .{
-                    .col = col,
-                    .row = row,
-                };
-            } else {
-                return .{
-                    .col = 0,
-                    .row = row + 1,
-                };
-            }
-        } else {
-            unreachable;
-        }
+        unreachable;
+
     }
 };
