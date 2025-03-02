@@ -172,6 +172,7 @@ pub const Editor = struct {
         DeleteWord: void,
         DeleteAroundWord: void,
         DeleteLine: void,
+        NextWord: void,
         MoveToEndOfLine: void,
         MoveToStartOfLine: void,
         DeleteInsideWord: void,
@@ -215,6 +216,11 @@ pub const Editor = struct {
                 .WirteAtCursor => |text| {
                     try editor.text_buffer.insert(text, editor.getAbsRow(), editor.getAbsCol());
                     editor.moveRight(1);
+                },
+                .NextWord => {
+                    const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol());
+                    editor.cursor.row = @intCast(next_pos.row -| editor.top);
+                    editor.cursor.col = @intCast(next_pos.col -| editor.left);
                 },
                 inline else => {},
             }
@@ -273,6 +279,8 @@ pub const Editor = struct {
         } else if (key.matches('d', .{})) {
             try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
             try self.pending_cmd_queue.append(@intCast(key.codepoint));
+        } else if (key.matches('w', .{})) {
+            try Motion.exec(Motion{ .NextWord = void{} }, self);
         }
     }
 

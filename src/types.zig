@@ -14,6 +14,11 @@ pub const CursorState = struct {
     col: u16 = 0,
 };
 
+pub const Position = struct {
+    row: usize = 0,
+    col: usize = 0,
+};
+
 // Move to dedicated types file
 pub const Mode = enum {
     Normal,

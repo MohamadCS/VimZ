@@ -126,7 +126,6 @@ pub const App = struct {
         if (args.next()) |arg| {
             file_name = arg;
         } else {
-            log.err("Must provide a file", .{});
             return; 
         }
 

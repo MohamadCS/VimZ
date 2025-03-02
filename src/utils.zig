@@ -4,50 +4,40 @@ const Error = error{
     NotInGitRepo,
 };
 
-pub const delimters = [_]u8{
-    ' ',
-    '\t',
-    '\n',
-    '.',
-    ',',
-    ';',
-    ':',
-    '!',
-    '?',
-    '(',
-    ')',
-    '[',
-    ']',
-    '{',
-    '}',
-    '-',
-    '+',
-    '=',
-    '/',
-    '\\',
-    '*',
-    '&',
-    '|',
-    '^',
-    '~',
-    '$',
-    '@',
-    '#',
-    '%',
-    '<',
-    '>',
-    '_',
-};
-
-/// Needs to be freed
-pub fn getDelimterSet(allocator: std.mem.Allocator) !std.AutoHashMap(u8, u8) {
-    var map = std.AutoHashMap(u8, u8).init(allocator);
-    for (delimters) |delimiter| {
-        try map.put(delimiter, 0);
-    }
-
-    return map;
-}
+pub const delimters = std.StaticStringMap(u1).initComptime(.{
+    .{ " ", 0 },
+    .{ "\t", 0 },
+    .{ "\n", 0 },
+    .{ ".", 0 },
+    .{ ",", 0 },
+    .{ ";", 0 },
+    .{ ":", 0 },
+    .{ "!", 0 },
+    .{ "?", 0 },
+    .{ "(", 0 },
+    .{ ")", 0 },
+    .{ "[", 0 },
+    .{ "]", 0 },
+    .{ "{", 0 },
+    .{ "}", 0 },
+    .{ "-", 0 },
+    .{ "+", 0 },
+    .{ "=", 0 },
+    .{ "/", 0 },
+    .{ "\\", 0 },
+    .{ "*", 0 },
+    .{ "&", 0 },
+    .{ "|", 0 },
+    .{ "^", 0 },
+    .{ "~", 0 },
+    .{ "$", 0 },
+    .{ "@", 0 },
+    .{ "#", 0 },
+    .{ "%", 0 },
+    .{ "<", 0 },
+    .{ ">", 0 },
+    .{ "_", 0 },
+});
 
 // TODO: add a process that checks if the  branch has changed
 pub fn getGitBranch(allocator: std.mem.Allocator) ![]u8 {
