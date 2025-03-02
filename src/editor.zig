@@ -84,14 +84,20 @@ pub const Editor = struct {
     pub fn moveAbs(self: *Self, row: usize, col: usize) void {
         if (row < self.top + self.win_opts.height.? - 1 and row >= self.top) {
             self.cursor.row = @intCast(row -| self.top);
+        } else if (row < self.cursor.row) {
+            self.top = 0;
+            self.cursor.row = @intCast(row);
         } else {
-            self.top = row -| self.cursor.row;
+            self.top = row -| self.cursor.col;
         }
 
         if (col < self.left + self.win_opts.width.? - 1 and col >= self.left) {
             self.cursor.col = @intCast(col -| self.left);
+        } else if (col < self.cursor.col) {
+            self.left = 0;
+            self.cursor.col = @intCast(col);
         } else {
-            self.left = col - self.cursor.col;
+            self.left = col -| self.cursor.col;
         }
     }
 
@@ -186,7 +192,10 @@ pub const Editor = struct {
         DeleteWord: void,
         DeleteAroundWord: void,
         DeleteLine: void,
-        NextWord: void,
+        NextWord: enum {
+            WORD,
+            word,
+        },
         MoveToEndOfLine: void,
         MoveToStartOfLine: void,
         DeleteInsideWord: void,
@@ -207,8 +216,13 @@ pub const Editor = struct {
                 .MoveUp => |x| {
                     editor.moveUp(@intCast(x));
                 },
-                .MoveToEndOfLine => {},
-                .MoveToStartOfLine => {},
+                .MoveToEndOfLine => {
+                    const line = try editor.text_buffer.getLineInfo(editor.getAbsRow());
+                    editor.moveAbs(editor.getAbsRow(), line.len -| 1);
+                },
+                .MoveToStartOfLine => {
+                    editor.moveAbs(editor.getAbsRow(), 0);
+                },
                 .Quit => {
                     var app = try Vimz.App.getInstance();
                     app.quit = true;
@@ -231,8 +245,11 @@ pub const Editor = struct {
                     try editor.text_buffer.insert(text, editor.getAbsRow(), editor.getAbsCol());
                     editor.moveRight(1);
                 },
-                .NextWord => {
-                    const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol(), true);
+                .NextWord => |t| {
+                    const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol(), switch (t) {
+                        .word => true,
+                        .WORD => false,
+                    });
                     editor.moveAbs(next_pos.row, next_pos.col);
                 },
                 inline else => {},
@@ -293,7 +310,9 @@ pub const Editor = struct {
             try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
             try self.pending_cmd_queue.append(@intCast(key.codepoint));
         } else if (key.matches('w', .{})) {
-            try Motion.exec(Motion{ .NextWord = void{} }, self);
+            try Motion.exec(Motion{ .NextWord = .word }, self);
+        } else if (key.matches('W', .{})) {
+            try Motion.exec(Motion{ .NextWord = .WORD }, self);
         }
     }
 
