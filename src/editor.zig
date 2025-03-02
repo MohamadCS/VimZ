@@ -81,6 +81,20 @@ pub const Editor = struct {
         }
     }
 
+    pub fn moveAbs(self: *Self, row: usize, col: usize) void {
+        if (row < self.top + self.win_opts.height.? - 1 and row >= self.top) {
+            self.cursor.row = @intCast(row -| self.top);
+        } else {
+            self.top = row -| self.cursor.row;
+        }
+
+        if (col < self.left + self.win_opts.width.? - 1 and col >= self.left) {
+            self.cursor.col = @intCast(col -| self.left);
+        } else {
+            self.left = col - self.cursor.col;
+        }
+    }
+
     pub fn moveUp(self: *Self, steps: u16) void {
         self.cursor.row -|= steps;
         self.tryScroll();
@@ -218,9 +232,8 @@ pub const Editor = struct {
                     editor.moveRight(1);
                 },
                 .NextWord => {
-                    const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol());
-                    editor.cursor.row = @intCast(next_pos.row -| editor.top);
-                    editor.cursor.col = @intCast(next_pos.col -| editor.left);
+                    const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol(), true);
+                    editor.moveAbs(next_pos.row, next_pos.col);
                 },
                 inline else => {},
             }

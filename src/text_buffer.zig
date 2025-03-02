@@ -61,7 +61,7 @@ pub const TextBuffer = struct {
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = line.len + 1 }, true);
     }
 
-    pub fn findNextWord(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+    pub fn findNextWord(self: *Self, row: usize, col: usize, includeWordDel: bool) !vimz.Types.Position {
         // Start from first_idx, if we found a deliimter return its position,otherwise
         // return the position of the first char after the spaces
         // If we found a new line, then the word return the index of the first word of the line.
@@ -101,14 +101,16 @@ pub const TextBuffer = struct {
                 continue;
             }
 
-            if (utils.delimters.get(&.{curr_ch})) |_| {
-                return .{
-                    .col = i,
-                    .row = row,
-                };
+            if (includeWordDel) {
+                if (utils.delimters.get(&.{curr_ch})) |_| {
+                    return .{
+                        .col = i,
+                        .row = row,
+                    };
+                }
             }
 
-            if (col == line.len -| 1) {
+            if (i == line.len -| 1) {
                 if (row == line_count -| 1) {
                     return .{
                         .col = col,
