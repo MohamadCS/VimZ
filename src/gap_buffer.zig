@@ -162,6 +162,7 @@ pub fn GapBuffer(comptime T: type) type {
         /// if there is the gap size is not enought, then it will
         /// allocate new memory and replace the pointer to
         /// the buffer's slice.
+
         pub fn write(self: *Self, data_slice: []const T) !void {
             self.dirty = true;
             if (self.gapSize() <= data_slice.len) {

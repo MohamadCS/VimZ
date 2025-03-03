@@ -143,7 +143,7 @@ pub const Editor = struct {
             }
         }
 
-        try self.text_buffer.moveCursor(self.getAbsRow(), self.getAbsCol());
+        // try self.text_buffer.moveCursor(self.getAbsRow(), self.getAbsCol());
     }
 
     pub fn draw(self: *Self, editorWin: *vaxis.Window) !void {
@@ -293,7 +293,7 @@ pub const Editor = struct {
         } else if (key.matches('k', .{})) {
             try Motion.exec(Motion{ .MoveUp = 1 }, self);
         } else if (key.matches('q', .{})) {
-            try Motion.exec(Motion{ .Quit = void{} }, self);
+            try Motion.exec(Motion{ .Quit = {} }, self);
         } else if (key.matchesAny(&.{ 'i', 'a' }, .{})) {
             try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Insert }, self);
             if (key.matches('a', .{})) {
@@ -303,13 +303,13 @@ pub const Editor = struct {
                 }
             }
         } else if (key.matches('d', .{ .ctrl = true })) {
-            try Motion.exec(Motion{ .ScrollHalfPageDown = void{} }, self);
+            try Motion.exec(Motion{ .ScrollHalfPageDown = {} }, self);
         } else if (key.matches('u', .{ .ctrl = true })) {
-            try Motion.exec(Motion{ .ScrollHalfPageUp = void{} }, self);
+            try Motion.exec(Motion{ .ScrollHalfPageUp = {} }, self);
         } else if (key.matches('$', .{})) {
-            try Motion.exec(Motion{ .MoveToEndOfLine = void{} }, self);
+            try Motion.exec(Motion{ .MoveToEndOfLine = {} }, self);
         } else if (key.matches('0', .{})) {
-            try Motion.exec(Motion{ .MoveToStartOfLine = void{} }, self);
+            try Motion.exec(Motion{ .MoveToStartOfLine = {} }, self);
         } else if (key.matches('d', .{})) {
             try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
             try self.pending_cmd_queue.append(@intCast(key.codepoint));
@@ -317,7 +317,7 @@ pub const Editor = struct {
             try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
             try self.pending_cmd_queue.append(@intCast(key.codepoint));
         } else if (key.matches('G', .{})) {
-            try Motion.exec(Motion{ .LastLine = void{} }, self);
+            try Motion.exec(Motion{ .LastLine = {} }, self);
         } else if (key.matches('w', .{})) {
             try Motion.exec(Motion{ .NextWord = .word }, self);
         } else if (key.matches('W', .{})) {
