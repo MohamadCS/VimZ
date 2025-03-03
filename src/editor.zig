@@ -3,11 +3,11 @@ const vaxis = @import("vaxis");
 const utils = @import("utils.zig");
 const Vimz = @import("app.zig");
 const TextBuffer = @import("text_buffer.zig").TextBuffer;
-
+const Trie = @import("trie.zig").Trie;
 const Allocator = std.mem.Allocator;
-const log = std.log.scoped(.main);
+const log = @import("logger.zig").Logger.log;
 
-const Cmds = std.StaticStringMap(Editor.Motion).initComptime(.{
+const cmds = std.StaticStringMap(Editor.Motion).initComptime(.{
     .{ "diw", .DeleteWord },
     .{ "daw", .DeleteAroundWord },
     .{ "dd", .DeleteLine },
@@ -28,6 +28,8 @@ pub const Editor = struct {
 
     pending_cmd_queue: std.ArrayList(u8),
 
+    cmd_trie: Trie,
+
     cursor: Vimz.Types.CursorState,
 
     // TODO: change to theme
@@ -45,14 +47,20 @@ pub const Editor = struct {
             .text_buffer = try TextBuffer.init(allocator),
             .mode = Vimz.Types.Mode.Normal,
             .cursor = .{},
+            .cmd_trie = .{},
             .pending_cmd_queue = std.ArrayList(u8).init(allocator),
             .top = 0,
             .left = 0,
         };
     }
 
+    pub fn setup(self: *Self) !void {
+        try self.cmd_trie.init(self.allocator, cmds.keys());
+    }
+
     pub fn deinit(self: *Self) void {
         self.text_buffer.deinit();
+        self.cmd_trie.deinit();
         self.pending_cmd_queue.deinit();
     }
 
@@ -170,6 +178,7 @@ pub const Editor = struct {
     }
 
     pub fn handleInput(self: *Self, key: vaxis.Key) !void {
+        try log("Cursor : row {}, col{}\n",.{self.cursor.row,self.cursor.col});
         switch (self.mode) {
             .Normal => try self.handleNormalMode(key),
             .Insert => try self.handleInsertMode(key),
@@ -310,39 +319,38 @@ pub const Editor = struct {
             try Motion.exec(Motion{ .MoveToEndOfLine = {} }, self);
         } else if (key.matches('0', .{})) {
             try Motion.exec(Motion{ .MoveToStartOfLine = {} }, self);
-        } else if (key.matches('d', .{})) {
-            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
-            try self.pending_cmd_queue.append(@intCast(key.codepoint));
-        } else if (key.matches('g', .{})) {
-            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
-            try self.pending_cmd_queue.append(@intCast(key.codepoint));
         } else if (key.matches('G', .{})) {
             try Motion.exec(Motion{ .LastLine = {} }, self);
         } else if (key.matches('w', .{})) {
             try Motion.exec(Motion{ .NextWord = .word }, self);
         } else if (key.matches('W', .{})) {
             try Motion.exec(Motion{ .NextWord = .WORD }, self);
+        } else {
+            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
+            try self.handlePendingCommand(key);
         }
     }
 
     // TODO : Find a better command handling system, for example a state machine
     pub fn handlePendingCommand(self: *Self, key: vaxis.Key) !void {
-        try self.pending_cmd_queue.append(@intCast(key.codepoint));
-        // For testing purposes
-        if (self.pending_cmd_queue.items.len > 5) {
-            self.pending_cmd_queue.deinit();
-            self.pending_cmd_queue = std.ArrayList(u8).init(self.allocator);
-
-            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
-            return;
-        }
-
-        if (Cmds.get(self.pending_cmd_queue.items)) |cmd| {
-            try Motion.exec(cmd, self);
-            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
-
-            self.pending_cmd_queue.deinit();
-            self.pending_cmd_queue = std.ArrayList(u8).init(self.allocator);
+        // New handling System:
+        // while its a number caluclate it
+        //
+        const key_text = key.text orelse return;
+        const result = try self.cmd_trie.step(key_text[0]);
+        switch (result) {
+            .Accept => {
+                if (cmds.get(self.cmd_trie.curr_seq.items)) |cmd| {
+                    try Motion.exec(cmd, self);
+                    try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
+                }
+                self.cmd_trie.reset();
+            },
+            .Reject => {
+                self.cmd_trie.reset();
+                try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
+            },
+            .Deciding => {},
         }
     }
 };

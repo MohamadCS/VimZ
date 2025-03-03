@@ -1,6 +1,7 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const utils = @import("utils.zig");
+const Logger = @import("logger.zig").Logger;
 
 pub const Comps = @import("components.zig");
 pub const Editor = @import("editor.zig").Editor;
@@ -10,7 +11,6 @@ pub const StatusLine = @import("status_line.zig").StatusLine;
 const Vimz = @This();
 
 const Allocator = std.mem.Allocator;
-const log = std.log.scoped(.main);
 
 // Devide to App and State
 pub const App = struct {
@@ -29,6 +29,7 @@ pub const App = struct {
     editor: Editor,
 
     statusLine: StatusLine,
+
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const Self = @This();
@@ -57,6 +58,7 @@ pub const App = struct {
         return &App.instance.?;
     }
 
+
     pub fn deinit(self: *Self) void {
         self.vx.deinit(self.allocator, self.tty.anyWriter());
         self.tty.deinit();
@@ -65,7 +67,6 @@ pub const App = struct {
 
         const deinit_status = App.gpa.deinit();
         if (deinit_status == .leak) {
-            log.err("memory leak", .{});
         }
     }
 
@@ -110,7 +111,10 @@ pub const App = struct {
                 try self.vx.resize(self.allocator, self.tty.anyWriter(), ws);
             },
             .key_press => |key| {
-                // If other windows can handle input then switch on the current state
+                // For some reason, vaxis enters with this key pressed
+                if(key.codepoint == vaxis.Key.f3) {
+                    return;
+                }
                 try self.editor.handleInput(key);
             },
             .refresh_status_line => {},
@@ -126,11 +130,10 @@ pub const App = struct {
         if (args.next()) |arg| {
             file_name = arg;
         } else {
-            return; 
+            return;
         }
 
         self.file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
-            log.err("Could not open the file", .{});
             return err;
         };
         const file_size = (try self.file.stat()).size;
@@ -171,6 +174,7 @@ pub const App = struct {
         try self.vx.queryTerminal(self.tty.anyWriter(), 0.1 * std.time.ns_per_s);
 
         try self.statusLine.setup();
+        try self.editor.setup();
 
         while (!self.quit) {
             self.loop.pollEvent();

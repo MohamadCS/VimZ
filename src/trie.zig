@@ -2,7 +2,9 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
-const Trie = struct {
+/// Modified Trie data structure to support state change
+/// Matches the shortest prefix.
+pub const Trie = struct {
     allocator: Allocator = undefined,
 
     init_state_id: usize = undefined,
@@ -44,7 +46,7 @@ const Trie = struct {
 
     const Self = @This();
 
-    pub fn init(self: *Self, allocator: Allocator) !void {
+    pub fn init(self: *Self, allocator: Allocator, words: []const []const u8) !void {
         self.states = std.AutoHashMap(u64, State).init(allocator);
         self.curr_seq = std.ArrayList(u8).init(allocator);
         self.allocator = allocator;
@@ -53,6 +55,10 @@ const Trie = struct {
         self.curr_state_id = self.init_state_id;
 
         try self.states.put(self.init_state_id, State.init(allocator, self.init_state_id));
+
+        for (words) |word| {
+            try self.append(word);
+        }
     }
 
     /// Creates a new state in states, and returns its id.
@@ -134,11 +140,9 @@ test "Basic matching test" {
     const alloc = gpa.allocator();
 
     var dfa = Trie{};
-    try dfa.init(alloc);
+    const words: []const []const u8 = &[_][]const u8{ "hello", "hellr" };
+    try dfa.init(alloc, words);
     defer dfa.deinit();
-
-    try dfa.append("hello");
-    try dfa.append("hellr");
 
     try testing.expectEqual(try dfa.step('h'), Trie.Result.Deciding);
     try testing.expectEqual(try dfa.step('e'), Trie.Result.Deciding);
@@ -155,4 +159,46 @@ test "Basic matching test" {
     try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
     try testing.expectEqual(try dfa.step('r'), Trie.Result.Accept);
     try testing.expectEqualStrings(dfa.curr_seq.items, "hellr");
+}
+
+test "Reject test" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        _ = gpa.deinit();
+    }
+
+    const alloc = gpa.allocator();
+
+    var dfa = Trie{};
+
+    const words: []const []const u8 = &[_][]const u8{ "hello", "again", "world" };
+    try dfa.init(alloc, words);
+    defer dfa.deinit();
+
+    try testing.expectEqual(try dfa.step('h'), Trie.Result.Deciding);
+    try testing.expectEqual(try dfa.step('e'), Trie.Result.Deciding);
+    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try dfa.step('r'), Trie.Result.Reject);
+}
+
+test "smallest prefix match" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        _ = gpa.deinit();
+    }
+
+    const alloc = gpa.allocator();
+
+    var dfa = Trie{};
+    const words: []const []const u8 = &[_][]const u8{ "hello", "he" };
+
+    try dfa.init(alloc, words);
+    defer dfa.deinit();
+
+    try testing.expectEqual(try dfa.step('h'), Trie.Result.Deciding);
+    try testing.expectEqual(try dfa.step('e'), Trie.Result.Accept);
+    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try dfa.step('o'), Trie.Result.Accept);
 }
