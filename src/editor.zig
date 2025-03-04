@@ -1,18 +1,27 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const utils = @import("utils.zig");
-const Vimz = @import("app.zig");
+const vimz = @import("app.zig");
 const TextBuffer = @import("text_buffer.zig").TextBuffer;
 const Trie = @import("trie.zig").Trie;
 const Allocator = std.mem.Allocator;
 const log = @import("logger.zig").Logger.log;
 
-const cmds = std.StaticStringMap(Editor.Motion).initComptime(.{
-    .{ "dw", .DeleteWord },
-    .{ "diw", .DeleteInsideWord },
-    .{ "daw", .DeleteAroundWord },
-    .{ "dd", .DeleteLine },
-    .{ "gg", .FirstLine },
+const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
+    .{ "dw", &.{.DeleteWord} },
+    .{ "diw", &.{.DeleteInsideWord} },
+    .{ "daw", &.{.DeleteAroundWord} },
+    .{ "cw", &.{
+        .DeleteWord,
+        Editor.Motion{ .ChangeMode = vimz.Types.Mode.Insert },
+    } },
+    .{ "ciw", &.{
+        .DeleteInsideWord,
+        Editor.Motion{ .ChangeMode = vimz.Types.Mode.Insert },
+    } },
+    .{ "caw", &.{.DeleteAroundWord} },
+    .{ "dd", &.{.DeleteLine} },
+    .{ "gg", &.{.FirstLine} },
 });
 
 // Devide to App and State
@@ -25,13 +34,13 @@ pub const Editor = struct {
 
     left: usize,
 
-    mode: Vimz.Types.Mode,
+    mode: vimz.Types.Mode,
 
     pending_cmd_queue: std.ArrayList(u8),
 
     cmd_trie: Trie,
 
-    cursor: Vimz.Types.CursorState,
+    cursor: vimz.Types.CursorState,
 
     // TODO: change to theme
     fg: vaxis.Color = .{
@@ -46,7 +55,7 @@ pub const Editor = struct {
         return Self{
             .allocator = allocator,
             .text_buffer = try TextBuffer.init(allocator),
-            .mode = Vimz.Types.Mode.Normal,
+            .mode = vimz.Types.Mode.Normal,
             .cursor = .{},
             .cmd_trie = .{},
             .pending_cmd_queue = std.ArrayList(u8).init(allocator),
@@ -145,7 +154,7 @@ pub const Editor = struct {
         const line = try self.text_buffer.getLineInfo(self.getAbsRow());
         const max_col = line.len;
 
-        if (self.mode == Vimz.Types.Mode.Normal) {
+        if (self.mode == vimz.Types.Mode.Normal) {
             if (self.getAbsCol() >= max_col) {
                 self.left = @min(self.left, max_col -| 1);
                 self.cursor.col = @intCast(max_col -| self.left -| 1);
@@ -190,7 +199,7 @@ pub const Editor = struct {
         MoveDown: usize,
         MoveLeft: usize,
         MoveRight: usize,
-        ChangeMode: Vimz.Types.Mode,
+        ChangeMode: vimz.Types.Mode,
         Quit: void,
         ScrollHalfPageUp: void,
         ScrollHalfPageDown: void,
@@ -233,7 +242,7 @@ pub const Editor = struct {
                     editor.moveAbs(editor.getAbsRow(), 0);
                 },
                 .Quit => {
-                    var app = try Vimz.App.getInstance();
+                    var app = try vimz.App.getInstance();
                     app.quit = true;
                 },
                 .ChangeMode => |mode| {
@@ -286,7 +295,7 @@ pub const Editor = struct {
 
     pub fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
-            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
+            try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Normal }, self);
             try Motion.exec(.{ .MoveLeft = 1 }, self);
         } else if (key.matches(vaxis.Key.enter, .{})) {
             try self.text_buffer.insert("\n", self.getAbsRow(), self.getAbsCol());
@@ -308,7 +317,7 @@ pub const Editor = struct {
         } else if (key.matches('q', .{})) {
             try Motion.exec(Motion{ .Quit = {} }, self);
         } else if (key.matchesAny(&.{ 'i', 'a' }, .{})) {
-            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Insert }, self);
+            try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Insert }, self);
             if (key.matches('a', .{})) {
                 const line = try self.text_buffer.getLineInfo(self.getAbsRow());
                 if (line.len > 0) {
@@ -335,15 +344,19 @@ pub const Editor = struct {
         } else if (key.matches('W', .{})) {
             try Motion.exec(Motion{ .NextWord = .WORD }, self);
         } else {
-            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Pending }, self);
+            try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Pending }, self);
             try self.handlePendingCommand(key);
         }
     }
 
     pub fn executePendingCommand(self: *Self, cmd_str: []const u8) !void {
-        if (cmds.get(cmd_str)) |cmd| {
-            try Motion.exec(cmd, self);
-            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
+        if (cmds.get(cmd_str)) |motions| {
+            for (motions) |motion| {
+                try Motion.exec(motion, self);
+                if (self.mode == vimz.Types.Mode.Pending) {
+                    try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Normal }, self);
+                }
+            }
         }
     }
 
@@ -361,7 +374,7 @@ pub const Editor = struct {
             },
             .Reject => {
                 self.cmd_trie.reset();
-                try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
+                try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Normal }, self);
             },
             .Deciding => {},
         }
