@@ -8,7 +8,8 @@ const Allocator = std.mem.Allocator;
 const log = @import("logger.zig").Logger.log;
 
 const cmds = std.StaticStringMap(Editor.Motion).initComptime(.{
-    .{ "diw", .DeleteWord },
+    .{ "dw", .DeleteWord },
+    .{ "diw", .DeleteInsideWord },
     .{ "daw", .DeleteAroundWord },
     .{ "dd", .DeleteLine },
     .{ "gg", .FirstLine },
@@ -150,8 +151,6 @@ pub const Editor = struct {
                 self.cursor.col = @intCast(max_col -| self.left -| 1);
             }
         }
-
-        // try self.text_buffer.moveCursor(self.getAbsRow(), self.getAbsCol());
     }
 
     pub fn draw(self: *Self, editorWin: *vaxis.Window) !void {
@@ -178,7 +177,7 @@ pub const Editor = struct {
     }
 
     pub fn handleInput(self: *Self, key: vaxis.Key) !void {
-        try log("Cursor : row {}, col{}\n",.{self.cursor.row,self.cursor.col});
+        try log("Cursor : row {}, col{}\n", .{ self.cursor.row, self.cursor.col });
         switch (self.mode) {
             .Normal => try self.handleNormalMode(key),
             .Insert => try self.handleInsertMode(key),
@@ -196,9 +195,12 @@ pub const Editor = struct {
         ScrollHalfPageUp: void,
         ScrollHalfPageDown: void,
         DeleteWord: void,
+        EndOfWord: void,
+        PrevWord: void,
         LastLine: void,
         FirstLine: void,
         DeleteAroundWord: void,
+        DeleteInsideWord: void,
         DeleteLine: void,
         NextWord: enum {
             WORD,
@@ -206,7 +208,6 @@ pub const Editor = struct {
         },
         MoveToEndOfLine: void,
         MoveToStartOfLine: void,
-        DeleteInsideWord: void,
         InsertNewLine: void,
         WirteAtCursor: []const TextBuffer.CharType,
 
@@ -238,8 +239,15 @@ pub const Editor = struct {
                 .ChangeMode => |mode| {
                     editor.mode = mode;
                 },
+                .DeleteWord => {
+                    try editor.text_buffer.deleteWord(editor.getAbsRow(), editor.getAbsCol());
+                },
                 .DeleteLine => {
                     try editor.text_buffer.deleteLine(editor.getAbsRow());
+                },
+                .DeleteInsideWord => {
+                    const new_pos = try editor.text_buffer.deleteInsideWord(editor.getAbsRow(), editor.getAbsCol());
+                    editor.moveAbs(new_pos.row, new_pos.col);
                 },
                 .ScrollHalfPageUp => {
                     editor.moveAbs(editor.getAbsRow() -| editor.win_opts.height.? / 2, editor.getAbsCol());
@@ -265,6 +273,12 @@ pub const Editor = struct {
                     });
                     editor.moveAbs(next_pos.row, next_pos.col);
                 },
+                .EndOfWord => {
+                    // TODO: Support jumping to next line
+                    const pos = try editor.text_buffer.findWordEnd(editor.getAbsRow(), editor.getAbsCol() + 1);
+                    editor.moveAbs(pos.row, pos.col);
+                },
+
                 inline else => {},
             }
         }
@@ -277,17 +291,7 @@ pub const Editor = struct {
         } else if (key.matches(vaxis.Key.enter, .{})) {
             try self.text_buffer.insert("\n", self.getAbsRow(), self.getAbsCol());
             try Motion.exec(.{ .MoveDown = 1 }, self);
-        }
-        // else if (key.matches(vaxis.Key.backspace, .{})) {
-        //     if (self.cursor.col == 0) {
-        //         self.moveUp(1);
-        //         // Go to the end of the last line
-        //     } else {
-        //         self.moveLeft(1);
-        //     }
-        //     try self.buff.deleteBackwards(GapBuffer.SearchPolicy{ .Number = 1 }, true);
-        // }
-        else if (key.text) |text| {
+        } else if (key.text) |text| {
             try Motion.exec(Motion{ .WirteAtCursor = text }, self);
         }
     }
@@ -313,6 +317,11 @@ pub const Editor = struct {
             }
         } else if (key.matches('d', .{ .ctrl = true })) {
             try Motion.exec(Motion{ .ScrollHalfPageDown = {} }, self);
+        } else if (key.matches('b', .{})) {
+            const pos = try self.text_buffer.findWordBegining(self.getAbsRow(), self.getAbsCol());
+            self.moveAbs(pos.row, pos.col);
+        } else if (key.matches('e', .{})) {
+            try Motion.exec(Motion{ .EndOfWord = {} }, self);
         } else if (key.matches('u', .{ .ctrl = true })) {
             try Motion.exec(Motion{ .ScrollHalfPageUp = {} }, self);
         } else if (key.matches('$', .{})) {
@@ -331,6 +340,13 @@ pub const Editor = struct {
         }
     }
 
+    pub fn executePendingCommand(self: *Self, cmd_str: []const u8) !void {
+        if (cmds.get(cmd_str)) |cmd| {
+            try Motion.exec(cmd, self);
+            try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
+        }
+    }
+
     // TODO : Find a better command handling system, for example a state machine
     pub fn handlePendingCommand(self: *Self, key: vaxis.Key) !void {
         // New handling System:
@@ -340,10 +356,7 @@ pub const Editor = struct {
         const result = try self.cmd_trie.step(key_text[0]);
         switch (result) {
             .Accept => {
-                if (cmds.get(self.cmd_trie.curr_seq.items)) |cmd| {
-                    try Motion.exec(cmd, self);
-                    try Motion.exec(Motion{ .ChangeMode = Vimz.Types.Mode.Normal }, self);
-                }
+                try self.executePendingCommand(self.cmd_trie.getCurrentWord());
                 self.cmd_trie.reset();
             },
             .Reject => {

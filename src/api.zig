@@ -29,7 +29,7 @@ pub fn getCursorState() !Types.CursorState {
 
 pub fn getPendingCommand() ![]u8 {
     const app = try Vimz.App.getInstance();
-    return app.editor.pending_cmd_queue.items;
+    return app.editor.cmd_trie.curr_seq.items;
 }
 
 pub fn getAbsCursorCol() !usize {

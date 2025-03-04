@@ -1,15 +1,13 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
+const log = @import("logger.zig").Logger.log;
 const assert = std.debug.assert;
 
 const Error = error{
     TypeError,
     NotFound,
 };
-
-// TODO: implement a line table, each time we write a char, the table
-// should be updated
 
 pub fn GapBuffer(comptime T: type) type {
     comptime switch (@typeInfo(T)) {
@@ -113,6 +111,7 @@ pub fn GapBuffer(comptime T: type) type {
             if (!self.dirty) {
                 return;
             }
+
             self.dirty = false;
             self.lines.deinit();
             self.lines = std.ArrayList(Line).init(self.allocator);
@@ -162,7 +161,6 @@ pub fn GapBuffer(comptime T: type) type {
         /// if there is the gap size is not enought, then it will
         /// allocate new memory and replace the pointer to
         /// the buffer's slice.
-
         pub fn write(self: *Self, data_slice: []const T) !void {
             self.dirty = true;
             if (self.gapSize() <= data_slice.len) {
@@ -198,7 +196,6 @@ pub fn GapBuffer(comptime T: type) type {
             const new_buffer_size = raw_data_size + new_gap_size;
             const new_buffer = try self.allocator.alloc(T, new_buffer_size);
 
-            // [0,1,gapstart,#,#,#,gapend,0,0]
             const new_gap_end = self.gap_start + new_gap_size - 1;
 
             // Append the prefix
@@ -219,7 +216,7 @@ pub fn GapBuffer(comptime T: type) type {
 
         pub const SearchPolicy = union(enum) {
             Number: usize,
-            DelimiterSet: std.AutoHashMap(T, u8),
+            DelimiterSet: std.StaticStringMap(void),
             Char: T,
         };
 
@@ -239,14 +236,12 @@ pub fn GapBuffer(comptime T: type) type {
                     // delete until of the buffer
                     // If we want to delete until the end of the line simply
                     // include '\n' in the delimter set
-                    var deleteToIdx = self.findForwards(
+                    const deleteToIdx = self.findForwards(
                         SearchPolicy{
                             .DelimiterSet = set,
                         },
                         includeDelimiter,
-                    ) catch self.buffer.len;
-
-                    deleteToIdx -|= 1;
+                    ) catch (self.buffer.len -| 1);
 
                     self.gap_end = deleteToIdx;
                 },
@@ -271,14 +266,13 @@ pub fn GapBuffer(comptime T: type) type {
                 },
 
                 .DelimiterSet => |set| {
-                    var deleteToIdx = self.findBackwards(
+                    const deleteToIdx = self.findBackwards(
                         SearchPolicy{
                             .DelimiterSet = set,
                         },
                         includeDelimiter,
-                    ) catch 1;
+                    ) catch 0;
 
-                    deleteToIdx -|= 1;
                     self.gap_start = deleteToIdx;
                 },
                 else => unreachable,
@@ -286,10 +280,27 @@ pub fn GapBuffer(comptime T: type) type {
         }
 
         pub fn findForwards(self: *Self, searchPolicy: SearchPolicy, includeDelimiter: bool) !usize {
-            for (self.gap_end + 1..self.buffer.len) |i| {
+            // Since the cursor is at gap_end + 1, then we need to at least include that char no matter
+            // what it is.
+            //
+
+
+
+
+            const start_idx = self.gap_end + 1; // skipping char under cursor.
+            const end_idx = @max(start_idx, self.buffer.len);
+
+
+            for (start_idx..end_idx) |i| {
                 switch (searchPolicy) {
                     .DelimiterSet => |*set| {
-                        if (set.contains(self.buffer[i])) return i;
+                        if (set.get(&.{self.buffer[i]})) |_| {
+                            if (includeDelimiter) {
+                                return i;
+                            } else {
+                                return i -| 1;
+                            }
+                        }
                     },
 
                     .Char => |ch| {
@@ -308,26 +319,29 @@ pub fn GapBuffer(comptime T: type) type {
             return Error.NotFound;
         }
 
+        // should return col, row
         pub fn findBackwards(self: *Self, searchPolicy: SearchPolicy, includeDelimiter: bool) !usize {
             var i = self.gap_start;
-
-            if (i == 0) {
-                return Error.NotFound;
-            }
 
             while (i > 0) {
                 i -= 1;
 
                 switch (searchPolicy) {
                     .DelimiterSet => |*set| {
-                        if (set.contains(self.buffer[i])) return i;
+                        if (set.get(&.{self.buffer[i]})) |_| {
+                            if (includeDelimiter) {
+                                return i;
+                            } else {
+                                return i + 1;
+                            }
+                        }
                     },
                     .Char => |ch| {
                         if (self.buffer[i] == ch) {
                             if (includeDelimiter) {
                                 return i;
                             } else {
-                                return i -| 1;
+                                return i +| 1;
                             }
                         }
                     },
@@ -335,7 +349,7 @@ pub fn GapBuffer(comptime T: type) type {
                 }
             }
 
-            return Error.NotFound;
+            return i;
         }
 
         pub inline fn getIdx(self: *Self, row: usize, col: usize) !usize {

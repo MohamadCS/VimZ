@@ -36,7 +36,8 @@ pub const delimters = std.StaticStringMap(void).initComptime(.{
     .{ "%", {} },
     .{ "<", {} },
     .{ ">", {} },
-    .{ "_", {} },
+    .{ "\"", {} },
+    .{ "\'", {} },
 });
 
 // TODO: add a process that checks if the  branch has changed

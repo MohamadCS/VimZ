@@ -93,6 +93,10 @@ pub const Trie = struct {
         }
     }
 
+    pub fn getCurrentWord(self : Self) []const u8 {
+        return self.curr_seq.items;
+    }
+
     pub fn reset(self: *Self) void {
         self.curr_seq.shrinkAndFree(0);
         self.curr_state_id = self.init_state_id;

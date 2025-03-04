@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const utils = @import("utils.zig");
 const vimz = @import("app.zig");
+const log = @import("logger.zig").Logger.log;
 
 pub const GapBuffer = @import("gap_buffer.zig").GapBuffer(TextBuffer.CharType);
 
@@ -59,6 +60,134 @@ pub const TextBuffer = struct {
         try self.moveCursor(row, 0);
         const line = try self.gap_buffer.getLineInfo(row);
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = line.len + 1 }, true);
+    }
+
+    // pub fn findForwards(self: *Self, row: usize, col: usize, searchPolicy: GapBuffer.SearchPolicy, skipWs: bool, includeDelimiter: bool) !usize {
+    //
+    //     const start_idx = self.gap_end + 1; // skipping char under cursor.
+    //     const end_idx = @max(start_idx, self.buffer.len);
+    //
+    //
+    //     for (start_idx..end_idx) |i| {
+    //         switch (searchPolicy) {
+    //             .DelimiterSet => |*set| {
+    //                 if (set.get(&.{self.gap_buffer.getLineInfo[i]})) |_| {
+    //                     if (includeDelimiter) {
+    //                         return i;
+    //                     } else {
+    //                         return i -| 1;
+    //                     }
+    //                 }
+    //             },
+    //
+    //             .Char => |ch| {
+    //                 if (self.buffer[i] == ch) {
+    //                     if (includeDelimiter) {
+    //                         return i;
+    //                     } else {
+    //                         return i -| 1;
+    //                     }
+    //                 }
+    //             },
+    //
+    //             else => unreachable,
+    //         }
+    //     }
+    //     return GapBuffer.Error.NotFound;
+    // }
+    // find next word, delete until next word
+    pub fn deleteWord(self: *Self, row: usize, col: usize) !void {
+        try self.moveCursor(row, col);
+        try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .DelimiterSet = utils.delimters }, false);
+    }
+
+    // If the current char is whitespace, remove everywhitespace, otherwise
+    // go to the begining of the word, and remove until the end of the word
+    pub fn deleteInsideWord(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+        const start_pos = try self.findWordBegining(row, col);
+        const end_pos = try self.findWordEnd(row, col);
+
+        try self.moveCursor(start_pos.row, start_pos.col);
+        try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = end_pos.col + 1 - start_pos.col }, false);
+
+        return start_pos;
+    }
+
+    pub fn findWordBegining(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+        const line = try self.getLineInfo(row);
+
+        if (line.len == 0) {
+            return .{
+                .row = row,
+                .col = col,
+            };
+        }
+
+        var curr_ch = try self.getCharAt(row, col);
+
+        // if the current char is a delimiter, then its the begining of the word
+        if (utils.delimters.get(&.{curr_ch})) |_| {
+            return .{
+                .col = col,
+                .row = row,
+            };
+        }
+
+        var i = col;
+        while (i > 0) : (i -= 1) {
+            curr_ch = try self.getCharAt(row, i);
+
+            if (utils.delimters.get(&.{curr_ch})) |_| {
+                return .{
+                    // This is never the end of the line, since it
+                    .col = i + 1,
+                    .row = row,
+                };
+            }
+        }
+
+        return .{
+            .col = i,
+            .row = row,
+        };
+    }
+
+    pub fn findWordEnd(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+        const line = try self.getLineInfo(row);
+
+        if (line.len == 0) {
+            return .{
+                .row = row,
+                .col = col,
+            };
+        }
+
+        var curr_ch = try self.getCharAt(row, col);
+
+        // if the current char is a delimiter, then its the begining of the word
+        if (utils.delimters.get(&.{curr_ch})) |_| {
+            return .{
+                .col = col,
+                .row = row,
+            };
+        }
+
+        for (col..line.len) |i| {
+            curr_ch = try self.getCharAt(row, i);
+
+            if (utils.delimters.get(&.{curr_ch})) |_| {
+                return .{
+                    // This is never the end of the line, since it
+                    .col = i - 1,
+                    .row = row,
+                };
+            }
+        }
+
+        return .{
+            .col = line.len - 1,
+            .row = row,
+        };
     }
 
     pub fn findNextWord(self: *Self, row: usize, col: usize, includeWordDel: bool) !vimz.Types.Position {
@@ -127,6 +256,5 @@ pub const TextBuffer = struct {
         }
 
         unreachable;
-
     }
 };

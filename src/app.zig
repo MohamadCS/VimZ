@@ -11,6 +11,7 @@ pub const StatusLine = @import("status_line.zig").StatusLine;
 const Vimz = @This();
 
 const Allocator = std.mem.Allocator;
+const log = std.log.scoped(.main);
 
 // Devide to App and State
 pub const App = struct {
