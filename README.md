@@ -11,5 +11,5 @@ zig build --release=fast
 ## Usage
 
 ```bash
-./exec <path_to_file>
+./zig-out/bin/vimz <path_to_file>
 ```
