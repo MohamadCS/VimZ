@@ -69,9 +69,9 @@ pub const TextBuffer = struct {
 
     // If the current char is whitespace, remove everywhitespace, otherwise
     // go to the begining of the word, and remove until the end of the word
-    pub fn deleteInsideWord(self: *Self, row: usize, col: usize) !vimz.Types.Position {
-        const start_pos = try self.findCurrentWordBegining(row, col);
-        const end_pos = try self.findCurrentWordEnd(row, col);
+    pub fn deleteInsideWord(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+        const start_pos = try self.findCurrentWordBegining(row, col, subWord);
+        const end_pos = try self.findCurrentWordEnd(row, col, subWord);
 
         try self.moveCursor(start_pos.row, start_pos.col);
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = end_pos.col + 1 - start_pos.col }, false);
@@ -79,7 +79,7 @@ pub const TextBuffer = struct {
         return start_pos;
     }
 
-    pub fn findCurrentWordBegining(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+    pub fn findCurrentWordBegining(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
         const line = try self.getLineInfo(row);
 
         if (line.len == 0) {
@@ -106,7 +106,8 @@ pub const TextBuffer = struct {
 
         curr_ch = try self.getCharAt(row, curr_col);
         // if the current char is a delimiter, then its the begining of the word
-        if (utils.delimters.get(&.{curr_ch})) |_| {
+
+        if ((subWord and utils.delimters.get(&.{curr_ch}) != null) or curr_ch == ' ') {
             return .{
                 .col = curr_col,
                 .row = row,
@@ -117,7 +118,7 @@ pub const TextBuffer = struct {
         while (i > 0) : (i -= 1) {
             curr_ch = try self.getCharAt(row, i);
 
-            if (utils.delimters.get(&.{curr_ch})) |_| {
+            if ((subWord and utils.delimters.get(&.{curr_ch}) != null) or curr_ch == ' ') {
                 return .{
                     // This is never the end of the line, since it
                     .col = i + 1,
@@ -132,7 +133,7 @@ pub const TextBuffer = struct {
         };
     }
 
-    pub fn findCurrentWordEnd(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+    pub fn findCurrentWordEnd(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
         const line = try self.getLineInfo(row);
 
         if (line.len == 0) {
@@ -160,7 +161,7 @@ pub const TextBuffer = struct {
         curr_ch = try self.getCharAt(row, curr_col);
         // if the first is ws, then this will return the last ws,
         // otherwise, the end of delimter is itself.
-        if (utils.delimters.get(&.{curr_ch})) |_| {
+        if ((subWord and utils.delimters.get(&.{curr_ch}) != null) or curr_ch == ' ') {
             return .{
                 .col = curr_col,
                 .row = row,
@@ -170,7 +171,7 @@ pub const TextBuffer = struct {
         for (col..line.len) |i| {
             curr_ch = try self.getCharAt(row, i);
 
-            if (utils.delimters.get(&.{curr_ch})) |_| {
+            if ((subWord and utils.delimters.get(&.{curr_ch}) != null) or curr_ch == ' ') {
                 return .{
                     // This is never the end of the line, since it
                     .col = i - 1,
@@ -185,9 +186,9 @@ pub const TextBuffer = struct {
         };
     }
 
-    pub fn findWordBeginigAux(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+    pub fn findWordBeginigAux(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
         if (col > 0) {
-            const pos = self.findCurrentWordBegining(row, col - 1);
+            const pos = self.findCurrentWordBegining(row, col - 1, subWord);
             return pos;
         }
 
@@ -211,13 +212,13 @@ pub const TextBuffer = struct {
         }
 
         const line = try self.getLineInfo(line_idx);
-        const pos = self.findCurrentWordBegining(line_idx, line.len -| 1);
+        const pos = self.findCurrentWordBegining(line_idx, line.len -| 1, subWord);
 
         return pos;
     }
 
-    pub fn findWordBeginig(self: *Self, row: usize, col: usize) !vimz.Types.Position {
-        var res = try self.findWordBeginigAux(row, col);
+    pub fn findWordBeginig(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+        var res = try self.findWordBeginigAux(row, col, subWord);
 
         // Skip every whitespace line
         while (res.row >= 0) {
@@ -230,7 +231,7 @@ pub const TextBuffer = struct {
             if (res.col < line.len) {
                 const ch = try self.getCharAt(res.row, res.col);
                 if (ch == ' ') {
-                    res = try self.findWordBeginigAux(res.row, res.col);
+                    res = try self.findWordBeginigAux(res.row, res.col, subWord);
                 } else {
                     break;
                 }
@@ -242,11 +243,11 @@ pub const TextBuffer = struct {
         return res;
     }
 
-    fn findWordEndAux(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+    fn findWordEndAux(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
         const line = try self.getLineInfo(row);
 
         if (col + 1 <= line.len -| 1) {
-            const pos = self.findCurrentWordEnd(row, col + 1);
+            const pos = self.findCurrentWordEnd(row, col + 1, subWord);
             return pos;
         }
 
@@ -271,12 +272,12 @@ pub const TextBuffer = struct {
         }
 
         // found a non-empty line
-        const pos = self.findCurrentWordEnd(line_idx, 0);
+        const pos = self.findCurrentWordEnd(line_idx, 0, subWord);
         return pos;
     }
 
-    pub fn findWordEnd(self: *Self, row: usize, col: usize) !vimz.Types.Position {
-        var res = try self.findWordEndAux(row, col);
+    pub fn findWordEnd(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+        var res = try self.findWordEndAux(row, col, subWord);
         const line_count = try self.getLineCount();
 
         // Skip every whitespace line
@@ -290,7 +291,7 @@ pub const TextBuffer = struct {
             if (res.col < line.len) {
                 const ch = try self.getCharAt(res.row, res.col);
                 if (ch == ' ') {
-                    res = try self.findWordEndAux(res.row, res.col);
+                    res = try self.findWordEndAux(res.row, res.col, subWord);
                 } else {
                     break;
                 }
@@ -301,8 +302,8 @@ pub const TextBuffer = struct {
 
         return res;
     }
-    pub fn findNextWord(self: *Self, row: usize, col: usize) !vimz.Types.Position {
-        var word_pos = try self.findCurrentWordEnd(row, col);
+    pub fn findNextWord(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+        var word_pos = try self.findCurrentWordEnd(row, col, subWord);
         const line_count = try self.getLineCount();
 
         if (row < line_count -| 1) {
@@ -315,8 +316,8 @@ pub const TextBuffer = struct {
             }
         }
 
-        word_pos = try self.findWordEnd(word_pos.row, word_pos.col);
-        word_pos = try self.findCurrentWordBegining(word_pos.row, word_pos.col);
+        word_pos = try self.findWordEnd(word_pos.row, word_pos.col, subWord);
+        word_pos = try self.findCurrentWordBegining(word_pos.row, word_pos.col, subWord);
         return word_pos;
     }
 };

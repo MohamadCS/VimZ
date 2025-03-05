@@ -176,6 +176,8 @@ pub const Editor = struct {
         }
     }
 
+    const WordType = enum { WORD, word };
+
     pub const Motion = union(enum) {
         MoveUp: usize,
         MoveDown: usize,
@@ -186,17 +188,16 @@ pub const Editor = struct {
         ScrollHalfPageUp: void,
         ScrollHalfPageDown: void,
         DeleteWord: void,
-        EndOfWord: void,
-        PrevWord: void,
+
+        EndOfWord: WordType,
+        NextWord: WordType,
+        PrevWord: WordType,
+        DeleteInsideWord: WordType,
+
         LastLine: void,
         FirstLine: void,
         DeleteAroundWord: void,
-        DeleteInsideWord: void,
         DeleteLine: void,
-        NextWord: enum {
-            WORD,
-            word,
-        },
         MoveToEndOfLine: void,
         MoveToStartOfLine: void,
         InsertNewLine: void,
@@ -236,10 +237,6 @@ pub const Editor = struct {
                 .DeleteLine => {
                     try editor.text_buffer.deleteLine(editor.getAbsRow());
                 },
-                .DeleteInsideWord => {
-                    const new_pos = try editor.text_buffer.deleteInsideWord(editor.getAbsRow(), editor.getAbsCol());
-                    editor.moveAbs(new_pos.row, new_pos.col);
-                },
                 .ScrollHalfPageUp => {
                     editor.moveAbs(editor.getAbsRow() -| editor.win_opts.height.? / 2, editor.getAbsCol());
                 },
@@ -257,17 +254,33 @@ pub const Editor = struct {
                     const line_count = try editor.text_buffer.getLineCount();
                     editor.moveAbs(line_count -| 1, editor.getAbsCol());
                 },
-                .NextWord => {
-                    const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol());
+                .DeleteInsideWord => |word_t| {
+                    const new_pos = try editor.text_buffer.deleteInsideWord(editor.getAbsRow(), editor.getAbsCol(), switch (word_t) {
+                        .word => true,
+                        .WORD => false,
+                    });
+                    editor.moveAbs(new_pos.row, new_pos.col);
+                },
+                .NextWord => |word_t| {
+                    const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol(), switch (word_t) {
+                        .word => true,
+                        .WORD => false,
+                    });
                     editor.moveAbs(next_pos.row, next_pos.col);
                 },
-                .PrevWord => {
-                    const next_pos = try editor.text_buffer.findWordBeginig(editor.getAbsRow(), editor.getAbsCol());
+                .PrevWord => |word_t| {
+                    const next_pos = try editor.text_buffer.findWordBeginig(editor.getAbsRow(), editor.getAbsCol(), switch (word_t) {
+                        .word => true,
+                        .WORD => false,
+                    });
                     editor.moveAbs(next_pos.row, next_pos.col);
                 },
-                .EndOfWord => {
+                .EndOfWord => |word_t| {
                     // TODO: Support jumping to next line
-                    const pos = try editor.text_buffer.findWordEnd(editor.getAbsRow(), editor.getAbsCol());
+                    const pos = try editor.text_buffer.findWordEnd(editor.getAbsRow(), editor.getAbsCol(), switch (word_t) {
+                        .word => true,
+                        .WORD => false,
+                    });
                     editor.moveAbs(pos.row, pos.col);
                 },
 
@@ -278,7 +291,7 @@ pub const Editor = struct {
 
     pub fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
-            try Motion.exec(.{ .ChangeMode = vimz.Types.Mode.Normal }, self);
+            try Motion.exec(.{ .ChangeMode = .Normal }, self);
             try Motion.exec(.{ .MoveLeft = 1 }, self);
         } else if (key.matches(vaxis.Key.enter, .{})) {
             try self.text_buffer.insert("\n", self.getAbsRow(), self.getAbsCol());
@@ -300,7 +313,7 @@ pub const Editor = struct {
         } else if (key.matches('q', .{})) {
             try Motion.exec(.{ .Quit = {} }, self);
         } else if (key.matchesAny(&.{ 'i', 'a' }, .{})) {
-            try Motion.exec(.{ .ChangeMode = vimz.Types.Mode.Insert }, self);
+            try Motion.exec(.{ .ChangeMode = .Insert }, self);
             if (key.matches('a', .{})) {
                 const line = try self.text_buffer.getLineInfo(self.getAbsRow());
                 if (line.len > 0) {
@@ -310,11 +323,15 @@ pub const Editor = struct {
         } else if (key.matches('d', .{ .ctrl = true })) {
             try Motion.exec(.{ .ScrollHalfPageDown = {} }, self);
         } else if (key.matches('e', .{})) {
-            try Motion.exec(.{ .EndOfWord = {} }, self);
+            try Motion.exec(.{ .EndOfWord = .word }, self);
+        } else if (key.matches('E', .{})) {
+            try Motion.exec(.{ .EndOfWord = .WORD }, self);
         } else if (key.matches('u', .{ .ctrl = true })) {
             try Motion.exec(.{ .ScrollHalfPageUp = {} }, self);
         } else if (key.matches('b', .{})) {
-            try Motion.exec(.{ .PrevWord = {} }, self);
+            try Motion.exec(.{ .PrevWord = .word }, self);
+        } else if (key.matches('B', .{})) {
+            try Motion.exec(.{ .PrevWord = .WORD }, self);
         } else if (key.matches('$', .{})) {
             try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
         } else if (key.matches('0', .{})) {
@@ -323,8 +340,10 @@ pub const Editor = struct {
             try Motion.exec(.{ .LastLine = {} }, self);
         } else if (key.matches('w', .{})) {
             try Motion.exec(.{ .NextWord = .word }, self);
+        } else if (key.matches('W', .{})) {
+            try Motion.exec(.{ .NextWord = .WORD }, self);
         } else {
-            try Motion.exec(.{ .ChangeMode = vimz.Types.Mode.Pending }, self);
+            try Motion.exec(.{ .ChangeMode = .Pending }, self);
             try self.handlePendingCommand(key);
         }
     }
@@ -373,8 +392,15 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
         },
     },
     .{
-        "diw", &.{
-            .DeleteInsideWord,
+        "diw",
+        &.{
+            .{ .DeleteInsideWord = .word },
+        },
+    },
+    .{
+        "diW",
+        &.{
+            .{ .DeleteInsideWord = .WORD },
         },
     },
     .{
@@ -390,7 +416,7 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
     },
     .{
         "ciw", &.{
-            .DeleteInsideWord,
+            .{ .DeleteInsideWord = .word },
             .{ .ChangeMode = vimz.Types.Mode.Insert },
         },
     },
