@@ -75,7 +75,7 @@ pub const App = struct {
             .x_off = 0,
             .y_off = 0,
             .width = win.width,
-            .height = win.height - 2,
+            .height = win.height -| 2,
             // .border = .{
             //     .glyphs = .single_rounded,
             //     .where = .all
@@ -84,7 +84,7 @@ pub const App = struct {
 
         self.statusLine.win_opts = .{
             .x_off = 0,
-            .y_off = win.height - 2,
+            .y_off = win.height -| 2,
             .height = 1,
             .width = win.width,
         };
@@ -189,6 +189,7 @@ pub const App = struct {
             try self.draw();
 
             try self.vx.render(writer);
+
             try buffered_writer.flush();
         }
     }
