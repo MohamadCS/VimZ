@@ -120,16 +120,8 @@ pub const App = struct {
 
     fn readFile(self: *Self) !void {
         var file_name: []const u8 = "";
-        var args: std.process.ArgIterator = undefined;
 
-        switch (target.os.tag) {
-            .windows => {
-                args = std.process.initWithAllocator(self.allocator);
-            },
-            else => {
-                args = std.process.args();
-            },
-        }
+        var args = try std.process.argsWithAllocator(self.allocator);
 
         _ = args.next().?;
 
