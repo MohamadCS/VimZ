@@ -163,6 +163,12 @@ pub const Editor = struct {
                     .grapheme = try self.text_buffer.getSlicedCharAt(row, col),
                 }, .style = .{ .fg = self.fg } });
             }
+
+            for (end..editorWin.width) |virt_col| {
+                editorWin.writeCell(@intCast(virt_col), @intCast(virt_row), vaxis.Cell{ .char = .{
+                    .grapheme = " ",
+                }, .style = .{ .fg = self.fg } });
+            }
         }
 
         editorWin.showCursor(self.cursor.col, self.cursor.row);
