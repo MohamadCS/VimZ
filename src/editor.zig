@@ -1,10 +1,13 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+
 const vaxis = @import("vaxis");
+
 const utils = @import("utils.zig");
 const vimz = @import("app.zig");
+
 const TextBuffer = @import("text_buffer.zig").TextBuffer;
 const Trie = @import("trie.zig").Trie;
-const Allocator = std.mem.Allocator;
 const log = @import("logger.zig").Logger.log;
 
 // Devide to App and State
@@ -199,7 +202,7 @@ pub const Editor = struct {
         DeleteAroundWord: void,
         DeleteLine: void,
         MoveToEndOfLine: void,
-        MoveToStartOfLine: void,
+        MoveToStartOfLine: struct { stopAfterWs: bool },
         InsertNewLine: void,
         WirteAtCursor: []const TextBuffer.CharType,
 
@@ -221,8 +224,21 @@ pub const Editor = struct {
                     const line = try editor.text_buffer.getLineInfo(editor.getAbsRow());
                     editor.moveAbs(editor.getAbsRow(), line.len -| 1);
                 },
-                .MoveToStartOfLine => {
-                    editor.moveAbs(editor.getAbsRow(), 0);
+                .MoveToStartOfLine => |res| {
+                    const line = try editor.text_buffer.getLineInfo(editor.getAbsRow());
+                    var col: usize = 0;
+
+                    if (res.stopAfterWs) {
+                        for (0..line.len) |i| {
+                            const curr_ch = try editor.text_buffer.getCharAt(editor.getAbsRow(), i);
+                            if (curr_ch != ' ') {
+                                col = i;
+                                break;
+                            }
+                        }
+                    }
+
+                    editor.moveAbs(editor.getAbsRow(), col);
                 },
                 .Quit => {
                     var app = try vimz.App.getInstance();
@@ -296,13 +312,13 @@ pub const Editor = struct {
         } else if (key.matches(vaxis.Key.enter, .{})) {
             try self.text_buffer.insert("\n", self.getAbsRow(), self.getAbsCol());
             try Motion.exec(.{ .MoveDown = 1 }, self);
+            try Motion.exec(.{ .MoveToStartOfLine = .{.stopAfterWs = false} }, self);
         } else if (key.text) |text| {
             try Motion.exec(Motion{ .WirteAtCursor = text }, self);
         }
     }
 
     pub fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
-
         if (key.matches('l', .{})) {
             try Motion.exec(.{ .MoveRight = 1 }, self);
         } else if (key.matches('j', .{})) {
@@ -333,20 +349,22 @@ pub const Editor = struct {
             try Motion.exec(.{ .PrevWord = .word }, self);
         } else if (key.matches('A', .{})) {
             try Motion.exec(.{ .ChangeMode = .Insert }, self);
-            try Motion.exec(.{.MoveToEndOfLine = {}}, self);
+            try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
             const line = try self.text_buffer.getLineInfo(self.getAbsRow());
             if (line.len > 0) {
                 try Motion.exec(.{ .MoveRight = 1 }, self);
             }
         } else if (key.matches('I', .{})) {
-            try Motion.exec(.{.MoveToStartOfLine = {}}, self);
-            try Motion.exec(.{.ChangeMode = .Insert}, self);
+            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
+            try Motion.exec(.{ .ChangeMode = .Insert }, self);
         } else if (key.matches('B', .{})) {
             try Motion.exec(.{ .PrevWord = .WORD }, self);
         } else if (key.matches('$', .{})) {
             try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
         } else if (key.matches('0', .{})) {
-            try Motion.exec(.{ .MoveToStartOfLine = {} }, self);
+            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
+        } else if (key.matches('_', .{})) {
+            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
         } else if (key.matches('G', .{})) {
             try Motion.exec(.{ .LastLine = {} }, self);
         } else if (key.matches('w', .{})) {
