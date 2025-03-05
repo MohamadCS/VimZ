@@ -169,7 +169,6 @@ pub const Editor = struct {
     }
 
     pub fn handleInput(self: *Self, key: vaxis.Key) !void {
-        try log("Cursor : row {}, col{}\n", .{ self.cursor.row, self.cursor.col });
         switch (self.mode) {
             .Normal => try self.handleNormalMode(key),
             .Insert => try self.handleInsertMode(key),
@@ -258,11 +257,12 @@ pub const Editor = struct {
                     const line_count = try editor.text_buffer.getLineCount();
                     editor.moveAbs(line_count -| 1, editor.getAbsCol());
                 },
-                .NextWord => |t| {
-                    const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol(), switch (t) {
-                        .word => true,
-                        .WORD => false,
-                    });
+                .NextWord => {
+                    const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol());
+                    editor.moveAbs(next_pos.row, next_pos.col);
+                },
+                .PrevWord => {
+                    const next_pos = try editor.text_buffer.findWordBeginig(editor.getAbsRow(), editor.getAbsCol());
                     editor.moveAbs(next_pos.row, next_pos.col);
                 },
                 .EndOfWord => {
@@ -313,6 +313,8 @@ pub const Editor = struct {
             try Motion.exec(.{ .EndOfWord = {} }, self);
         } else if (key.matches('u', .{ .ctrl = true })) {
             try Motion.exec(.{ .ScrollHalfPageUp = {} }, self);
+        } else if (key.matches('b', .{})) {
+            try Motion.exec(.{ .PrevWord = {} }, self);
         } else if (key.matches('$', .{})) {
             try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
         } else if (key.matches('0', .{})) {
@@ -321,8 +323,6 @@ pub const Editor = struct {
             try Motion.exec(.{ .LastLine = {} }, self);
         } else if (key.matches('w', .{})) {
             try Motion.exec(.{ .NextWord = .word }, self);
-        } else if (key.matches('W', .{})) {
-            try Motion.exec(.{ .NextWord = .WORD }, self);
         } else {
             try Motion.exec(.{ .ChangeMode = vimz.Types.Mode.Pending }, self);
             try self.handlePendingCommand(key);
