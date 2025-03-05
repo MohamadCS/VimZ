@@ -28,7 +28,7 @@ pub fn GapBuffer(comptime T: type) type {
         /// The index of the start of the gap
         gap_start: usize,
 
-        /// true if and only if the buffer's content is changed exluding the gap  
+        /// true if and only if the buffer's content is changed exluding the gap
         dirty: bool = true,
 
         /// The index of the end of the gap

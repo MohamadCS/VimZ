@@ -163,12 +163,6 @@ pub const Editor = struct {
                     .grapheme = try self.text_buffer.getSlicedCharAt(row, col),
                 }, .style = .{ .fg = self.fg } });
             }
-
-            for (end..editorWin.width) |virt_col| {
-                editorWin.writeCell(@intCast(virt_col), @intCast(virt_row), vaxis.Cell{ .char = .{
-                    .grapheme = " ",
-                }, .style = .{ .fg = self.fg } });
-            }
         }
 
         editorWin.showCursor(self.cursor.col, self.cursor.row);
@@ -350,7 +344,12 @@ pub const Editor = struct {
     pub fn handlePendingCommand(self: *Self, key: vaxis.Key) !void {
         // New handling System:
         // while its a number caluclate it
-        //
+
+        if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
+            self.cmd_trie.reset();
+            try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Normal }, self);
+        }
+
         const key_text = key.text orelse return;
         const result = try self.cmd_trie.step(key_text[0]);
         switch (result) {

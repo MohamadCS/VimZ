@@ -1,7 +1,7 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const Allocator = std.mem.Allocator;
-
 pub const Logger = struct {
     file: std.fs.File,
 
@@ -29,7 +29,9 @@ pub const Logger = struct {
     }
 
     pub fn log(comptime fmt: []const u8, args: anytype) !void {
-        const logger = try Logger.getInstance();
-        try logger.file.writer().print(fmt, args);
+        if (builtin.mode == .Debug) {
+            const logger = try Logger.getInstance();
+            try logger.file.writer().print(fmt, args);
+        }
     }
 };
