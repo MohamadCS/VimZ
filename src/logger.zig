@@ -6,7 +6,7 @@ pub const Logger = struct {
     file: std.fs.File,
 
     const Self = @This();
-    pub fn init(file_name: []const u8) !Self {
+    fn init(file_name: []const u8) !Self {
         return Self{
             .file = try std.fs.cwd().createFile(file_name, .{}),
         };

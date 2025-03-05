@@ -302,6 +302,7 @@ pub const Editor = struct {
     }
 
     pub fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
+
         if (key.matches('l', .{})) {
             try Motion.exec(.{ .MoveRight = 1 }, self);
         } else if (key.matches('j', .{})) {
@@ -330,6 +331,16 @@ pub const Editor = struct {
             try Motion.exec(.{ .ScrollHalfPageUp = {} }, self);
         } else if (key.matches('b', .{})) {
             try Motion.exec(.{ .PrevWord = .word }, self);
+        } else if (key.matches('A', .{})) {
+            try Motion.exec(.{ .ChangeMode = .Insert }, self);
+            try Motion.exec(.{.MoveToEndOfLine = {}}, self);
+            const line = try self.text_buffer.getLineInfo(self.getAbsRow());
+            if (line.len > 0) {
+                try Motion.exec(.{ .MoveRight = 1 }, self);
+            }
+        } else if (key.matches('I', .{})) {
+            try Motion.exec(.{.MoveToStartOfLine = {}}, self);
+            try Motion.exec(.{.ChangeMode = .Insert}, self);
         } else if (key.matches('B', .{})) {
             try Motion.exec(.{ .PrevWord = .WORD }, self);
         } else if (key.matches('$', .{})) {
@@ -404,11 +415,6 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
         },
     },
     .{
-        "daw", &.{
-            .DeleteAroundWord,
-        },
-    },
-    .{
         "cw", &.{
             .DeleteWord,
             .{ .ChangeMode = vimz.Types.Mode.Insert },
@@ -421,8 +427,8 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
         },
     },
     .{
-        "caw", &.{
-            .DeleteAroundWord,
+        "ciW", &.{
+            .{ .DeleteInsideWord = .WORD },
             .{ .ChangeMode = vimz.Types.Mode.Insert },
         },
     },
