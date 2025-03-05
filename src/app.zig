@@ -159,6 +159,8 @@ pub const App = struct {
             .tty = &self.tty,
             .vaxis = &self.vx,
         };
+
+        // its seems that this has better performence than anyWriter().
         var buffered_writer = self.tty.bufferedWriter();
         const writer = buffered_writer.writer().any();
 
@@ -191,6 +193,7 @@ pub const App = struct {
             self.vx.queueRefresh();
 
             try self.vx.render(writer);
+
             try buffered_writer.flush();
         }
     }

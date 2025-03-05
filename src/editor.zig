@@ -196,7 +196,6 @@ pub const Editor = struct {
         NextWord: WordType,
         PrevWord: WordType,
         DeleteInsideWord: WordType,
-
         LastLine: void,
         FirstLine: void,
         DeleteAroundWord: void,
@@ -299,6 +298,9 @@ pub const Editor = struct {
                     });
                     editor.moveAbs(pos.row, pos.col);
                 },
+                .InsertNewLine => {
+                    try editor.text_buffer.insert("\n", editor.getAbsRow(), editor.getAbsCol());
+                },
 
                 inline else => {},
             }
@@ -310,14 +312,15 @@ pub const Editor = struct {
             try Motion.exec(.{ .ChangeMode = .Normal }, self);
             try Motion.exec(.{ .MoveLeft = 1 }, self);
         } else if (key.matches(vaxis.Key.enter, .{})) {
-            try self.text_buffer.insert("\n", self.getAbsRow(), self.getAbsCol());
+            try Motion.exec(.{ .InsertNewLine = {} }, self);
             try Motion.exec(.{ .MoveDown = 1 }, self);
-            try Motion.exec(.{ .MoveToStartOfLine = .{.stopAfterWs = false} }, self);
+            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
         } else if (key.text) |text| {
             try Motion.exec(Motion{ .WirteAtCursor = text }, self);
         }
     }
 
+    // Switch is cleaner, but this is the vaxis limitation.
     pub fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('l', .{})) {
             try Motion.exec(.{ .MoveRight = 1 }, self);
@@ -371,6 +374,17 @@ pub const Editor = struct {
             try Motion.exec(.{ .NextWord = .word }, self);
         } else if (key.matches('W', .{})) {
             try Motion.exec(.{ .NextWord = .WORD }, self);
+        } else if (key.matches('O', .{})) {
+            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
+            try Motion.exec(.{ .InsertNewLine = {} }, self);
+            try Motion.exec(.{ .ChangeMode = .Insert }, self);
+        } else if (key.matches('o', .{})) {
+            try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
+            try Motion.exec(.{ .ChangeMode = .Insert }, self);
+            try Motion.exec(.{ .MoveRight = 1 }, self);
+            try Motion.exec(.{ .InsertNewLine = {} }, self);
+            try Motion.exec(.{ .MoveDown = 1 }, self);
+            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
         } else {
             try Motion.exec(.{ .ChangeMode = .Pending }, self);
             try self.handlePendingCommand(key);
@@ -416,7 +430,8 @@ pub const Editor = struct {
 
 const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
     .{
-        "dw", &.{
+        "dw",
+        &.{
             .DeleteWord,
         },
     },
@@ -433,13 +448,15 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
         },
     },
     .{
-        "cw", &.{
+        "cw",
+        &.{
             .DeleteWord,
             .{ .ChangeMode = vimz.Types.Mode.Insert },
         },
     },
     .{
-        "ciw", &.{
+        "ciw",
+        &.{
             .{ .DeleteInsideWord = .word },
             .{ .ChangeMode = vimz.Types.Mode.Insert },
         },
@@ -451,12 +468,14 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
         },
     },
     .{
-        "dd", &.{
+        "dd",
+        &.{
             .DeleteLine,
         },
     },
     .{
-        "gg", &.{
+        "gg",
+        &.{
             .FirstLine,
         },
     },
