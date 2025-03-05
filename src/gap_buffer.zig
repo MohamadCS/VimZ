@@ -28,6 +28,7 @@ pub fn GapBuffer(comptime T: type) type {
         /// The index of the start of the gap
         gap_start: usize,
 
+        /// true if and only if the buffer's content is changed exluding the gap  
         dirty: bool = true,
 
         /// The index of the end of the gap
@@ -284,12 +285,8 @@ pub fn GapBuffer(comptime T: type) type {
             // what it is.
             //
 
-
-
-
             const start_idx = self.gap_end + 1; // skipping char under cursor.
             const end_idx = @max(start_idx, self.buffer.len);
-
 
             for (start_idx..end_idx) |i| {
                 switch (searchPolicy) {

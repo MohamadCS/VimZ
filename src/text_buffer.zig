@@ -62,40 +62,6 @@ pub const TextBuffer = struct {
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = line.len + 1 }, true);
     }
 
-    // pub fn findForwards(self: *Self, row: usize, col: usize, searchPolicy: GapBuffer.SearchPolicy, skipWs: bool, includeDelimiter: bool) !usize {
-    //
-    //     const start_idx = self.gap_end + 1; // skipping char under cursor.
-    //     const end_idx = @max(start_idx, self.buffer.len);
-    //
-    //
-    //     for (start_idx..end_idx) |i| {
-    //         switch (searchPolicy) {
-    //             .DelimiterSet => |*set| {
-    //                 if (set.get(&.{self.gap_buffer.getLineInfo[i]})) |_| {
-    //                     if (includeDelimiter) {
-    //                         return i;
-    //                     } else {
-    //                         return i -| 1;
-    //                     }
-    //                 }
-    //             },
-    //
-    //             .Char => |ch| {
-    //                 if (self.buffer[i] == ch) {
-    //                     if (includeDelimiter) {
-    //                         return i;
-    //                     } else {
-    //                         return i -| 1;
-    //                     }
-    //                 }
-    //             },
-    //
-    //             else => unreachable,
-    //         }
-    //     }
-    //     return GapBuffer.Error.NotFound;
-    // }
-    // find next word, delete until next word
     pub fn deleteWord(self: *Self, row: usize, col: usize) !void {
         try self.moveCursor(row, col);
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .DelimiterSet = utils.delimters }, false);
@@ -104,8 +70,8 @@ pub const TextBuffer = struct {
     // If the current char is whitespace, remove everywhitespace, otherwise
     // go to the begining of the word, and remove until the end of the word
     pub fn deleteInsideWord(self: *Self, row: usize, col: usize) !vimz.Types.Position {
-        const start_pos = try self.findWordBegining(row, col);
-        const end_pos = try self.findWordEnd(row, col);
+        const start_pos = try self.findCurrentWordBegining(row, col);
+        const end_pos = try self.findCurrentWordEnd(row, col);
 
         try self.moveCursor(start_pos.row, start_pos.col);
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = end_pos.col + 1 - start_pos.col }, false);
@@ -113,7 +79,7 @@ pub const TextBuffer = struct {
         return start_pos;
     }
 
-    pub fn findWordBegining(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+    pub fn findCurrentWordBegining(self: *Self, row: usize, col: usize) !vimz.Types.Position {
         const line = try self.getLineInfo(row);
 
         if (line.len == 0) {
@@ -152,7 +118,7 @@ pub const TextBuffer = struct {
         };
     }
 
-    pub fn findWordEnd(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+    pub fn findCurrentWordEnd(self: *Self, row: usize, col: usize) !vimz.Types.Position {
         const line = try self.getLineInfo(row);
 
         if (line.len == 0) {
@@ -188,6 +154,44 @@ pub const TextBuffer = struct {
             .col = line.len - 1,
             .row = row,
         };
+    }
+
+    // BUG: last line out of bounds.
+    // TODO: Skip WS 
+    pub fn findWordEnd(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+        // const line_count = try self.getLineCount();
+        const line = try self.getLineInfo(row);
+
+        if (col + 1 <= line.len -| 1) {
+            const pos = self.findCurrentWordEnd(row, col + 1);
+            return pos;
+        }
+
+        const line_count = try self.getLineCount();
+
+        if (line_count -| 1 == row) {
+            return .{ .row = row, .col = col };
+        }
+
+        var line_idx = row + 1;
+        var curr_line = try self.getLineInfo(row + 1);
+
+        while (curr_line.len == 0 and line_idx < line_count) {
+            line_idx += 1;
+            curr_line = try self.getLineInfo(line_idx);
+        }
+
+        // meaning the last line is empty
+        if (line_idx == line_count) {
+            return .{
+                .col = 0,
+                .row = line_count -| 1,
+            };
+        }
+
+        // found a non-empty line
+        const pos = self.findWordEnd(line_idx, 0);
+        return pos;
     }
 
     pub fn findNextWord(self: *Self, row: usize, col: usize, includeWordDel: bool) !vimz.Types.Position {

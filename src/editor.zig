@@ -7,23 +7,6 @@ const Trie = @import("trie.zig").Trie;
 const Allocator = std.mem.Allocator;
 const log = @import("logger.zig").Logger.log;
 
-const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
-    .{ "dw", &.{.DeleteWord} },
-    .{ "diw", &.{.DeleteInsideWord} },
-    .{ "daw", &.{.DeleteAroundWord} },
-    .{ "cw", &.{
-        .DeleteWord,
-        Editor.Motion{ .ChangeMode = vimz.Types.Mode.Insert },
-    } },
-    .{ "ciw", &.{
-        .DeleteInsideWord,
-        Editor.Motion{ .ChangeMode = vimz.Types.Mode.Insert },
-    } },
-    .{ "caw", &.{.DeleteAroundWord} },
-    .{ "dd", &.{.DeleteLine} },
-    .{ "gg", &.{.FirstLine} },
-});
-
 // Devide to App and State
 pub const Editor = struct {
     allocator: Allocator,
@@ -284,7 +267,7 @@ pub const Editor = struct {
                 },
                 .EndOfWord => {
                     // TODO: Support jumping to next line
-                    const pos = try editor.text_buffer.findWordEnd(editor.getAbsRow(), editor.getAbsCol() + 1);
+                    const pos = try editor.text_buffer.findWordEnd(editor.getAbsRow(), editor.getAbsCol());
                     editor.moveAbs(pos.row, pos.col);
                 },
 
@@ -295,7 +278,7 @@ pub const Editor = struct {
 
     pub fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
-            try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Normal }, self);
+            try Motion.exec(.{ .ChangeMode = vimz.Types.Mode.Normal }, self);
             try Motion.exec(.{ .MoveLeft = 1 }, self);
         } else if (key.matches(vaxis.Key.enter, .{})) {
             try self.text_buffer.insert("\n", self.getAbsRow(), self.getAbsCol());
@@ -307,17 +290,17 @@ pub const Editor = struct {
 
     pub fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('l', .{})) {
-            try Motion.exec(Motion{ .MoveRight = 1 }, self);
+            try Motion.exec(.{ .MoveRight = 1 }, self);
         } else if (key.matches('j', .{})) {
-            try Motion.exec(Motion{ .MoveDown = 1 }, self);
+            try Motion.exec(.{ .MoveDown = 1 }, self);
         } else if (key.matches('h', .{})) {
-            try Motion.exec(Motion{ .MoveLeft = 1 }, self);
+            try Motion.exec(.{ .MoveLeft = 1 }, self);
         } else if (key.matches('k', .{})) {
-            try Motion.exec(Motion{ .MoveUp = 1 }, self);
+            try Motion.exec(.{ .MoveUp = 1 }, self);
         } else if (key.matches('q', .{})) {
-            try Motion.exec(Motion{ .Quit = {} }, self);
+            try Motion.exec(.{ .Quit = {} }, self);
         } else if (key.matchesAny(&.{ 'i', 'a' }, .{})) {
-            try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Insert }, self);
+            try Motion.exec(.{ .ChangeMode = vimz.Types.Mode.Insert }, self);
             if (key.matches('a', .{})) {
                 const line = try self.text_buffer.getLineInfo(self.getAbsRow());
                 if (line.len > 0) {
@@ -325,26 +308,23 @@ pub const Editor = struct {
                 }
             }
         } else if (key.matches('d', .{ .ctrl = true })) {
-            try Motion.exec(Motion{ .ScrollHalfPageDown = {} }, self);
-        } else if (key.matches('b', .{})) {
-            const pos = try self.text_buffer.findWordBegining(self.getAbsRow(), self.getAbsCol());
-            self.moveAbs(pos.row, pos.col);
+            try Motion.exec(.{ .ScrollHalfPageDown = {} }, self);
         } else if (key.matches('e', .{})) {
-            try Motion.exec(Motion{ .EndOfWord = {} }, self);
+            try Motion.exec(.{ .EndOfWord = {} }, self);
         } else if (key.matches('u', .{ .ctrl = true })) {
-            try Motion.exec(Motion{ .ScrollHalfPageUp = {} }, self);
+            try Motion.exec(.{ .ScrollHalfPageUp = {} }, self);
         } else if (key.matches('$', .{})) {
-            try Motion.exec(Motion{ .MoveToEndOfLine = {} }, self);
+            try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
         } else if (key.matches('0', .{})) {
-            try Motion.exec(Motion{ .MoveToStartOfLine = {} }, self);
+            try Motion.exec(.{ .MoveToStartOfLine = {} }, self);
         } else if (key.matches('G', .{})) {
-            try Motion.exec(Motion{ .LastLine = {} }, self);
+            try Motion.exec(.{ .LastLine = {} }, self);
         } else if (key.matches('w', .{})) {
-            try Motion.exec(Motion{ .NextWord = .word }, self);
+            try Motion.exec(.{ .NextWord = .word }, self);
         } else if (key.matches('W', .{})) {
-            try Motion.exec(Motion{ .NextWord = .WORD }, self);
+            try Motion.exec(.{ .NextWord = .WORD }, self);
         } else {
-            try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Pending }, self);
+            try Motion.exec(.{ .ChangeMode = vimz.Types.Mode.Pending }, self);
             try self.handlePendingCommand(key);
         }
     }
@@ -380,3 +360,49 @@ pub const Editor = struct {
         }
     }
 };
+
+const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
+    .{
+        "dw", &.{
+            .DeleteWord,
+        },
+    },
+    .{
+        "diw", &.{
+            .DeleteInsideWord,
+        },
+    },
+    .{
+        "daw", &.{
+            .DeleteAroundWord,
+        },
+    },
+    .{
+        "cw", &.{
+            .DeleteWord,
+            .{ .ChangeMode = vimz.Types.Mode.Insert },
+        },
+    },
+    .{
+        "ciw", &.{
+            .DeleteInsideWord,
+            .{ .ChangeMode = vimz.Types.Mode.Insert },
+        },
+    },
+    .{
+        "caw", &.{
+            .DeleteAroundWord,
+            .{ .ChangeMode = vimz.Types.Mode.Insert },
+        },
+    },
+    .{
+        "dd", &.{
+            .DeleteLine,
+        },
+    },
+    .{
+        "gg", &.{
+            .FirstLine,
+        },
+    },
+});

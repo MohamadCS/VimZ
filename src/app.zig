@@ -2,6 +2,7 @@ const std = @import("std");
 const vaxis = @import("vaxis");
 const utils = @import("utils.zig");
 const Logger = @import("logger.zig").Logger;
+const target = @import("builtin").target;
 
 pub const Comps = @import("components.zig");
 pub const Editor = @import("editor.zig").Editor;
@@ -31,7 +32,6 @@ pub const App = struct {
 
     statusLine: StatusLine,
 
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const Self = @This();
 
@@ -59,7 +59,6 @@ pub const App = struct {
         return &App.instance.?;
     }
 
-
     pub fn deinit(self: *Self) void {
         self.vx.deinit(self.allocator, self.tty.anyWriter());
         self.tty.deinit();
@@ -67,8 +66,7 @@ pub const App = struct {
         self.editor.deinit();
 
         const deinit_status = App.gpa.deinit();
-        if (deinit_status == .leak) {
-        }
+        if (deinit_status == .leak) {}
     }
 
     fn updateDims(self: *Self) !void {
@@ -102,8 +100,6 @@ pub const App = struct {
 
         try self.statusLine.draw(&statusLineWin);
         try self.editor.draw(&editorWin);
-
-        try self.vx.render(self.tty.anyWriter());
     }
 
     fn handleEvent(self: *Self, event: Types.Event) !void {
@@ -113,7 +109,7 @@ pub const App = struct {
             },
             .key_press => |key| {
                 // For some reason, vaxis enters with this key pressed
-                if(key.codepoint == vaxis.Key.f3) {
+                if (key.codepoint == vaxis.Key.f3) {
                     return;
                 }
                 try self.editor.handleInput(key);
@@ -123,11 +119,20 @@ pub const App = struct {
     }
 
     fn readFile(self: *Self) !void {
-        var args = std.process.args();
+        var file_name: []const u8 = "";
+        var args: std.process.ArgIterator = undefined;
+
+        switch (target.os.tag) {
+            .windows => {
+                args = std.process.initWithAllocator(self.allocator);
+            },
+            else => {
+                args = std.process.args();
+            },
+        }
 
         _ = args.next().?;
 
-        var file_name: []const u8 = "";
         if (args.next()) |arg| {
             file_name = arg;
         } else {
@@ -162,6 +167,8 @@ pub const App = struct {
             .tty = &self.tty,
             .vaxis = &self.vx,
         };
+        var buffered_writer = self.tty.bufferedWriter();
+        const writer = buffered_writer.writer().any();
 
         // Loop Setup
         //
@@ -171,8 +178,8 @@ pub const App = struct {
         defer self.loop.stop();
 
         // Settings
-        try self.vx.enterAltScreen(self.tty.anyWriter());
-        try self.vx.queryTerminal(self.tty.anyWriter(), 0.1 * std.time.ns_per_s);
+        try self.vx.enterAltScreen(writer);
+        try self.vx.queryTerminal(writer, 0.1 * std.time.ns_per_s);
 
         try self.statusLine.setup();
         try self.editor.setup();
@@ -188,6 +195,9 @@ pub const App = struct {
             try self.update();
 
             try self.draw();
+
+            try self.vx.render(writer);
+            try buffered_writer.flush();
         }
     }
 };
