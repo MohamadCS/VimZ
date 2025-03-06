@@ -133,12 +133,15 @@ pub fn GapBuffer(comptime T: type) type {
                 if (curr_ch == '\n') {
                     try self.lines.append(Line{ .offset = offset, .index = line_idx, .len = len, .last_char = last_char, .indent = curr_indent });
                     len = 0;
-                    last_char = null;
                     line_idx += 1;
                     offset = buff_idx + 1;
+
+                    last_char = null;
                     non_ws_found = false;
                     curr_indent = 0;
                 } else {
+                    len += 1;
+
                     if (curr_ch == ' ' and !non_ws_found) {
                         curr_indent += 1;
                     } else {
@@ -146,7 +149,6 @@ pub fn GapBuffer(comptime T: type) type {
                     }
 
                     last_char = if (curr_ch != ' ') curr_ch else last_char;
-                    len += 1;
                 }
 
                 buff_idx += 1;
@@ -159,9 +161,10 @@ pub fn GapBuffer(comptime T: type) type {
                 if (curr_ch == '\n') {
                     try self.lines.append(Line{ .offset = offset, .index = line_idx, .len = len, .last_char = last_char, .indent = curr_indent });
                     len = 0;
-                    last_char = null;
                     line_idx += 1;
-                    offset = buff_idx + 1;
+                    offset = buff_idx - self.gapSize() + 1;
+
+                    last_char = null;
                     non_ws_found = false;
                     curr_indent = 0;
                 } else {
@@ -435,7 +438,7 @@ pub fn GapBuffer(comptime T: type) type {
             const lines = try self.getLines();
 
             for (lines) |line| {
-                std.debug.print("{}  {}  {} {c} {}\n", .{ line.index, line.len, line.offset, line.last_char orelse '_' ,line.indent});
+                std.debug.print("{}  {}  {} {c} {}\n", .{ line.index, line.len, line.offset, line.last_char orelse '_', line.indent });
             }
         }
     };

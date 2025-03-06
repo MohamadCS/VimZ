@@ -67,6 +67,11 @@ pub const TextBuffer = struct {
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .DelimiterSet = utils.delimters }, false);
     }
 
+    pub fn deleteUnderCursor(self: *Self, row: usize, col: usize) !void {
+        try self.moveCursor(row, col);
+        try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = 1 }, false);
+    }
+
     // If the current char is whitespace, remove everywhitespace, otherwise
     // go to the begining of the word, and remove until the end of the word
     pub fn deleteInsideWord(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {

@@ -93,7 +93,7 @@ pub const Trie = struct {
         }
     }
 
-    pub fn getCurrentWord(self : Self) []const u8 {
+    pub fn getCurrentWord(self: Self) []const u8 {
         return self.curr_seq.items;
     }
 

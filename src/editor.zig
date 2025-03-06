@@ -197,6 +197,7 @@ pub const Editor = struct {
         PrevWord: WordType,
         DeleteInsideWord: WordType,
         LastLine: void,
+        DeleteUnderCursor: void,
         FirstLine: void,
         DeleteAroundWord: void,
         DeleteLine: void,
@@ -299,7 +300,19 @@ pub const Editor = struct {
                     editor.moveAbs(pos.row, pos.col);
                 },
                 .InsertNewLine => {
+                    const line = try editor.text_buffer.getLineInfo(editor.getAbsRow());
                     try editor.text_buffer.insert("\n", editor.getAbsRow(), editor.getAbsCol());
+                    const indent = try editor.allocator.alloc(TextBuffer.CharType, line.indent);
+                    defer editor.allocator.free(indent);
+
+                    for (indent) |*ch| {
+                        ch.* = ' ';
+                    }
+
+                    try editor.text_buffer.insert(indent, editor.getAbsRow() + 1, 0);
+                },
+                .DeleteUnderCursor => {
+                    try editor.text_buffer.deleteUnderCursor(editor.getAbsRow(), editor.getAbsCol());
                 },
 
                 inline else => {},
@@ -311,6 +324,13 @@ pub const Editor = struct {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             try Motion.exec(.{ .ChangeMode = .Normal }, self);
             try Motion.exec(.{ .MoveLeft = 1 }, self);
+        } else if (key.matches(vaxis.Key.backspace, .{})) {
+            try Motion.exec(.{ .MoveLeft = 1 }, self);
+            try Motion.exec(.{ .DeleteUnderCursor = {} }, self);
+            if (self.getAbsCol() == 0) {
+                try Motion.exec(.{ .MoveUp = 1 }, self);
+                try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
+            }
         } else if (key.matches(vaxis.Key.enter, .{})) {
             try Motion.exec(.{ .InsertNewLine = {} }, self);
             try Motion.exec(.{ .MoveDown = 1 }, self);
@@ -374,8 +394,10 @@ pub const Editor = struct {
             try Motion.exec(.{ .NextWord = .word }, self);
         } else if (key.matches('W', .{})) {
             try Motion.exec(.{ .NextWord = .WORD }, self);
+        } else if (key.matches('x', .{})) {
+            try Motion.exec(.{ .DeleteUnderCursor = {} }, self);
         } else if (key.matches('O', .{})) {
-            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
+            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
             try Motion.exec(.{ .InsertNewLine = {} }, self);
             try Motion.exec(.{ .ChangeMode = .Insert }, self);
         } else if (key.matches('o', .{})) {
@@ -384,7 +406,8 @@ pub const Editor = struct {
             try Motion.exec(.{ .MoveRight = 1 }, self);
             try Motion.exec(.{ .InsertNewLine = {} }, self);
             try Motion.exec(.{ .MoveDown = 1 }, self);
-            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
+            try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
+            try Motion.exec(.{ .MoveRight = 1 }, self);
         } else {
             try Motion.exec(.{ .ChangeMode = .Pending }, self);
             try self.handlePendingCommand(key);
@@ -428,6 +451,7 @@ pub const Editor = struct {
     }
 };
 
+// Pending commands: the order of motions is the order of their exection.
 const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
     .{
         "dw",
