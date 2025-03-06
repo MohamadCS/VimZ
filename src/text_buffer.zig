@@ -12,6 +12,8 @@ pub const TextBuffer = struct {
     allocator: Allocator,
     gap_buffer: GapBuffer,
 
+    changed: bool,
+
     pub const CharType: type = u8;
 
     const Self = @This();
@@ -20,6 +22,7 @@ pub const TextBuffer = struct {
         return Self{
             .allocator = allocator,
             .gap_buffer = try GapBuffer.init(allocator),
+            .changed = false,
         };
     }
 
@@ -52,17 +55,20 @@ pub const TextBuffer = struct {
     }
 
     pub inline fn insert(self: *Self, text: []const CharType, row: usize, col: usize) !void {
+        self.changed = true;
         try self.moveCursor(row, col);
         try self.gap_buffer.write(text);
     }
 
     pub inline fn deleteLine(self: *Self, row: usize) !void {
+        self.changed = true;
         try self.moveCursor(row, 0);
         const line = try self.gap_buffer.getLineInfo(row);
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = line.len + 1 }, true);
     }
 
     pub fn deleteUnderCursor(self: *Self, row: usize, col: usize) !void {
+        self.changed = true;
         try self.moveCursor(row, col);
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = 1 }, false);
     }
@@ -70,6 +76,7 @@ pub const TextBuffer = struct {
     // If the current char is whitespace, remove everywhitespace, otherwise
     // go to the begining of the word, and remove until the end of the word
     pub fn deleteInsideWord(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+        self.changed = true;
         const start_pos = try self.findCurrentWordBegining(row, col, subWord);
         const end_pos = try self.findCurrentWordEnd(row, col, subWord);
 

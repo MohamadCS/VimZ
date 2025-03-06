@@ -21,8 +21,6 @@ pub const App = struct {
 
     allocator: Allocator,
 
-    file: std.fs.File = undefined,
-
     quit: bool,
 
     loop: vaxis.Loop(Types.Event) = undefined,
@@ -116,31 +114,6 @@ pub const App = struct {
         }
     }
 
-    fn readFile(self: *Self) !void {
-        var file_name: []const u8 = "";
-
-        var args = try std.process.argsWithAllocator(self.allocator);
-        defer args.deinit();
-
-        _ = args.next().?;
-
-        if (args.next()) |arg| {
-            file_name = arg;
-        } else {
-            return;
-        }
-
-        self.file = std.fs.cwd().openFile(file_name, .{}) catch |err| {
-            return err;
-        };
-        const file_size = (try self.file.stat()).size;
-        const file_contents = try self.file.readToEndAlloc(self.allocator, file_size);
-        defer self.allocator.free(file_contents);
-
-        try self.editor.text_buffer.insert(file_contents, self.editor.getAbsRow(), self.editor.getAbsCol());
-        try self.editor.text_buffer.moveCursor(0, 0);
-    }
-
     fn update(self: *Self) !void {
         try self.updateDims();
         try self.editor.update();
@@ -151,7 +124,6 @@ pub const App = struct {
     }
 
     pub fn run(self: *Self) !void {
-        try self.readFile();
 
         self.loop = vaxis.Loop(Types.Event){
             .tty = &self.tty,

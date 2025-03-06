@@ -32,6 +32,16 @@ pub fn getPendingCommand() ![]u8 {
     return app.editor.cmd_trie.curr_seq.items;
 }
 
+pub fn getCurrBufferName() ![:0]const u8 {
+    const app = try Vimz.App.getInstance();
+    return app.editor.file_name;
+}
+
+pub fn isCurrBufferSaved() !bool {
+    const app = try Vimz.App.getInstance();
+    return app.editor.isSaved();
+}
+
 pub fn getAbsCursorCol() !usize {
     const app = try Vimz.App.getInstance();
     return app.editor.getAbsCol();
@@ -46,7 +56,6 @@ pub fn getAllocator() !std.mem.Allocator {
     const app = try Vimz.App.getInstance();
     return app.allocator;
 }
-
 
 pub fn addStatusLineComp(comp: StatusLine.Component, pos: StatusLine.Position) !void {
     var app = try Vimz.App.getInstance();

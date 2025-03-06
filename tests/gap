@@ -1,7 +1,4 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-const testing = std.testing;
-const log = @import("logger.zig").Logger.log;
+cjskdfjkasjkdfsdkjfajskdfklajklfonst log = @import("logger.zig").Logger.log;
 const assert = std.debug.assert;
 
 const Error = error{
@@ -19,7 +16,6 @@ pub fn GapBuffer(comptime T: type) type {
     };
 
     return struct {
-        /// Memory Allocator
         allocator: Allocator,
 
         /// Internal buffer data including the gap
@@ -564,7 +560,7 @@ test "empty Lines" {
     }
 
     const alloc = gpa.allocator();
-
+ehllo
     var gap_buffer = try GapBuffer(u8).init(alloc);
     defer gap_buffer.deinit();
 
@@ -572,4 +568,12 @@ test "empty Lines" {
     try gap_buffer.print();
     try gap_buffer.write("hello");
     try gap_buffer.print();
+}
+);
+}
+_buffer.print();
+    try gap_buffer.write("hello");
+    try gap_buffer.print();
+}
+);
 }

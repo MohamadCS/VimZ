@@ -21,6 +21,13 @@ pub fn addComps() !void {
 
     try Api.addStatusLineComp(
         .{
+            .update_func = &updateFileName,
+        },
+        .Left,
+    );
+
+    try Api.addStatusLineComp(
+        .{
             .update_func = &updateRowCol,
         },
         .Right,
@@ -32,6 +39,13 @@ pub fn addComps() !void {
         },
         .Right,
     );
+}
+
+fn updateFileName(comp: *Api.StatusLine.Component) !void {
+    const file_name = try Api.getCurrBufferName();
+    const saved_text = if (try Api.isCurrBufferSaved()) "" else "[+]";
+    try comp.setText("{s} {s}", .{ file_name, saved_text });
+    comp.style.?.italic = true;
 }
 
 fn updateMode(comp: *Api.StatusLine.Component) !void {

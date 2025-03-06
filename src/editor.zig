@@ -18,6 +18,8 @@ pub const Editor = struct {
 
     top: usize,
 
+    file_name: [:0]const u8 = "",
+
     left: usize,
 
     mode: vimz.Types.Mode,
@@ -61,6 +63,7 @@ pub const Editor = struct {
 
     pub fn setup(self: *Self) !void {
         try self.cmd_trie.init(self.allocator, cmds.keys());
+        try self.readFile();
     }
 
     pub fn deinit(self: *Self) void {
@@ -101,6 +104,36 @@ pub const Editor = struct {
             self.left -= 1;
             self.cursor.col +|= 1;
         }
+    }
+
+    pub fn isSaved(self: *Self) bool {
+        return !self.text_buffer.changed;
+    }
+
+    fn readFile(self: *Self) !void {
+        var args = std.process.args();
+
+        _ = args.next().?;
+
+        if (args.next()) |arg| {
+            self.file_name = arg;
+        } else {
+            return;
+        }
+
+        var file = std.fs.cwd().openFile(self.file_name, .{}) catch |err| {
+            return err;
+        };
+        defer file.close();
+
+        const file_size = (try file.stat()).size;
+        const file_contents = try file.readToEndAlloc(self.allocator, file_size);
+
+        defer self.allocator.free(file_contents);
+
+        try self.text_buffer.insert(file_contents, self.getAbsRow(), self.getAbsCol());
+        try self.text_buffer.moveCursor(0, 0);
+        self.text_buffer.changed = false;
     }
 
     pub fn moveAbs(self: *Self, row: usize, col: usize) void {
@@ -148,17 +181,19 @@ pub const Editor = struct {
 
     pub fn updateDims(self: *Self) !void {
         const max_digits = utils.digitNum(usize, try self.text_buffer.getLineCount());
-        self.wins_opts.text = .{
-            .x_off = @intCast(max_digits + 1),
+
+        const x_off = 2;
+        self.wins_opts.rows_col = .{
+            .x_off = x_off,
             .y_off = 0,
-            .width = @intCast(self.wins_opts.win.width.? -| max_digits),
+            .width = @intCast(max_digits), // should be current line digit num
             .height = self.wins_opts.win.height.?,
         };
 
-        self.wins_opts.rows_col = .{
-            .x_off = 0,
+        self.wins_opts.text = .{
+            .x_off = @intCast(max_digits + 1 + x_off),
             .y_off = 0,
-            .width = @intCast(max_digits), // should be current line digit num
+            .width = @intCast(self.wins_opts.win.width.? -| max_digits),
             .height = self.wins_opts.win.height.?,
         };
     }
@@ -274,6 +309,7 @@ pub const Editor = struct {
         AppendNextLine: void,
         WirteAtCursor: []const TextBuffer.CharType,
         Replicate: vaxis.Key,
+        SaveFile: void,
 
         pub fn exec(self: Motion, editor: *Editor) anyerror!void {
             switch (self) {
@@ -390,6 +426,15 @@ pub const Editor = struct {
                     const pos = try editor.text_buffer.appendNextLine(editor.getAbsRow(), editor.getAbsCol());
                     editor.moveAbs(pos.row, pos.col);
                 },
+                .SaveFile => {
+                    const buffers = editor.text_buffer.gap_buffer.getBuffers();
+                    var file: std.fs.File = try std.fs.cwd().openFile(editor.file_name, .{ .mode = .read_write });
+                    defer file.close();
+                    for (buffers) |buffer| {
+                        try file.writer().print("{s}", .{buffer});
+                    }
+                    editor.text_buffer.changed = false;
+                },
 
                 inline else => {},
             }
@@ -465,6 +510,8 @@ pub const Editor = struct {
             try Motion.exec(.{ .MoveLeft = 1 }, self);
         } else if (key.matches('k', .{})) {
             try Motion.exec(.{ .MoveUp = 1 }, self);
+        } else if (key.matches('S', .{})) {
+            try Motion.exec(.{ .SaveFile = {} }, self);
         } else if (key.matches('q', .{})) {
             try Motion.exec(.{ .Quit = {} }, self);
         } else if (key.matches('i', .{})) {
