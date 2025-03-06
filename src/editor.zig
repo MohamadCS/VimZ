@@ -193,7 +193,6 @@ pub const Editor = struct {
         ScrollHalfPageUp: void,
         ScrollHalfPageDown: void,
         DeleteWord: void,
-
         EndOfWord: WordType,
         NextWord: WordType,
         PrevWord: WordType,
@@ -208,8 +207,9 @@ pub const Editor = struct {
         MoveToStartOfLine: struct { stopAfterWs: bool },
         InsertNewLine: void,
         WirteAtCursor: []const TextBuffer.CharType,
+        Replicate: vaxis.Key,
 
-        pub fn exec(self: Motion, editor: *Editor) !void {
+        pub fn exec(self: Motion, editor: *Editor) anyerror!void {
             switch (self) {
                 .MoveLeft => |x| {
                     editor.moveLeft(@intCast(x));
@@ -264,7 +264,7 @@ pub const Editor = struct {
                 },
                 .WirteAtCursor => |text| {
                     try editor.text_buffer.insert(text, editor.getAbsRow(), editor.getAbsCol());
-                    editor.moveRight(1);
+                    editor.moveRight(@intCast(text.len));
                 },
                 .FirstLine => {
                     editor.moveAbs(0, editor.getAbsCol());
@@ -321,6 +321,10 @@ pub const Editor = struct {
                     try editor.text_buffer.deleteUnderCursor(editor.getAbsRow(), editor.getAbsCol());
                 },
 
+                .Replicate => |key| {
+                    try editor.handleInput(key);
+                },
+
                 inline else => {},
             }
         }
@@ -337,15 +341,22 @@ pub const Editor = struct {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             try Motion.exec(.{ .ChangeMode = .Normal }, self);
             try Motion.exec(.{ .MoveLeft = 1 }, self);
+        } else if (key.matches(vaxis.Key.tab, .{})) {
+            try Motion.exec(.{ .WirteAtCursor = " " ** Editor.indent_size }, self);
         } else if (key.matches(vaxis.Key.backspace, .{})) {
+            if (self.getAbsRow() == 0 and self.getAbsCol() == 0) {
+                return;
+            }
+
             try Motion.exec(.{ .MoveLeft = 1 }, self);
             try Motion.exec(.{ .DeleteUnderCursor = {} }, self);
             if (self.getAbsCol() == 0) {
                 try Motion.exec(.{ .MoveUp = 1 }, self);
                 try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
+                try self.enterInsertAfter();
             }
         } else if (key.matches(vaxis.Key.enter, .{})) {
-            const indent = try self.getNextIndent(self.getAbsRow());
+            const indent = try self.getNextIndent(self.getAbsRow(), true);
             try Motion.exec(.{ .InsertNewLine = {} }, self);
             try Motion.exec(.{ .MoveDown = 1 }, self);
             try Motion.exec(.{ .Indent = indent }, self);
@@ -355,13 +366,20 @@ pub const Editor = struct {
         }
     }
 
-    // TODO: change based on last char
-    pub fn getNextIndent(self: *Self, row: usize) !usize {
+    pub fn getNextIndent(self: *Self, row: usize, down: bool) !usize {
         const line = try self.text_buffer.getLineInfo(row);
         var indent = line.indent;
         if (line.last_char) |ch| {
             if (utils.open_brak.get(&.{ch}) != null) {
-                indent += Editor.indent_size;
+                if (down) {
+                    indent += Editor.indent_size;
+                }
+            }
+
+            if (utils.close_brak.get(&.{ch}) != null) {
+                if (!down) {
+                    indent += Editor.indent_size;
+                }
             }
         }
         return indent;
@@ -418,7 +436,7 @@ pub const Editor = struct {
         } else if (key.matches('x', .{})) {
             try Motion.exec(.{ .DeleteUnderCursor = {} }, self);
         } else if (key.matches('O', .{})) {
-            const indent = try self.getNextIndent(self.getAbsRow());
+            const indent = try self.getNextIndent(self.getAbsRow(), false);
             try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
             try Motion.exec(.{ .InsertNewLine = {} }, self);
             try Motion.exec(.{ .ChangeMode = .Insert }, self);
@@ -426,7 +444,7 @@ pub const Editor = struct {
             try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
             try self.enterInsertAfter();
         } else if (key.matches('o', .{})) {
-            const indent = try self.getNextIndent(self.getAbsRow());
+            const indent = try self.getNextIndent(self.getAbsRow(), true);
             try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
             try Motion.exec(.{ .ChangeMode = .Insert }, self);
             try Motion.exec(.{ .MoveRight = 1 }, self);
