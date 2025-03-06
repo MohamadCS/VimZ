@@ -4,6 +4,20 @@ const Error = error{
     NotInGitRepo,
 };
 
+pub const open_brak = std.StaticStringMap(void).initComptime(.{
+    .{ "[", {} },
+    .{ "{", {} },
+    .{ "(", {} },
+    .{ "[", {} },
+});
+
+pub const close_brak = std.StaticStringMap(void).initComptime(.{
+    .{ "]", {} },
+    .{ "}", {} },
+    .{ ")", {} },
+    .{ "]", {} },
+});
+
 pub const delimters = std.StaticStringMap(void).initComptime(.{
     .{ " ", {} },
     .{ "\t", {} },
