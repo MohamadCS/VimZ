@@ -62,7 +62,7 @@ pub const Trie = struct {
     }
 
     /// Creates a new state in states, and returns its id.
-    fn create_state(self: *Self) !usize {
+    fn createState(self: *Self) !usize {
         self.id_ctr += 1;
         const new_id = self.id_ctr;
 
@@ -81,7 +81,7 @@ pub const Trie = struct {
                 curr_state_id = next_state_id;
             } else {
                 // Else add the transition
-                const id = try self.create_state();
+                const id = try self.createState();
                 const currentStatePtr = self.states.getPtr(curr_state_id).?;
                 try currentStatePtr.next_state_tbl.put(ch, id);
                 curr_state_id = id;
@@ -143,26 +143,26 @@ test "Basic matching test" {
 
     const alloc = gpa.allocator();
 
-    var dfa = Trie{};
+    var trie = Trie{};
     const words: []const []const u8 = &[_][]const u8{ "hello", "hellr" };
-    try dfa.init(alloc, words);
-    defer dfa.deinit();
+    try trie.init(alloc, words);
+    defer trie.deinit();
 
-    try testing.expectEqual(try dfa.step('h'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('e'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('o'), Trie.Result.Accept);
-    try testing.expectEqualStrings(dfa.curr_seq.items, "hello");
+    try testing.expectEqual(try trie.step('h'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('e'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('o'), Trie.Result.Accept);
+    try testing.expectEqualStrings(trie.curr_seq.items, "hello");
 
-    dfa.reset();
+    trie.reset();
 
-    try testing.expectEqual(try dfa.step('h'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('e'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('r'), Trie.Result.Accept);
-    try testing.expectEqualStrings(dfa.curr_seq.items, "hellr");
+    try testing.expectEqual(try trie.step('h'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('e'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('r'), Trie.Result.Accept);
+    try testing.expectEqualStrings(trie.curr_seq.items, "hellr");
 }
 
 test "Reject test" {
@@ -173,17 +173,17 @@ test "Reject test" {
 
     const alloc = gpa.allocator();
 
-    var dfa = Trie{};
+    var trie = Trie{};
 
     const words: []const []const u8 = &[_][]const u8{ "hello", "again", "world" };
-    try dfa.init(alloc, words);
-    defer dfa.deinit();
+    try trie.init(alloc, words);
+    defer trie.deinit();
 
-    try testing.expectEqual(try dfa.step('h'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('e'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('r'), Trie.Result.Reject);
+    try testing.expectEqual(try trie.step('h'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('e'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('r'), Trie.Result.Reject);
 }
 
 test "smallest prefix match" {
@@ -194,15 +194,15 @@ test "smallest prefix match" {
 
     const alloc = gpa.allocator();
 
-    var dfa = Trie{};
+    var trie = Trie{};
     const words: []const []const u8 = &[_][]const u8{ "hello", "he" };
 
-    try dfa.init(alloc, words);
-    defer dfa.deinit();
+    try trie.init(alloc, words);
+    defer trie.deinit();
 
-    try testing.expectEqual(try dfa.step('h'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('e'), Trie.Result.Accept);
-    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('l'), Trie.Result.Deciding);
-    try testing.expectEqual(try dfa.step('o'), Trie.Result.Accept);
+    try testing.expectEqual(try trie.step('h'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('e'), Trie.Result.Accept);
+    try testing.expectEqual(try trie.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('l'), Trie.Result.Deciding);
+    try testing.expectEqual(try trie.step('o'), Trie.Result.Accept);
 }

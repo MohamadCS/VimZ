@@ -70,16 +70,15 @@ pub const App = struct {
 
     fn updateDims(self: *Self) !void {
         const win = self.vx.window();
-        self.editor.win_opts = .{
+
+        self.editor.wins_opts.win = .{
             .x_off = 0,
             .y_off = 0,
             .width = win.width,
             .height = win.height - 2,
-            // .border = .{
-            //     .glyphs = .single_rounded,
-            //     .where = .all
-            // }
         };
+
+        try self.editor.updateDims();
 
         self.statusLine.win_opts = .{
             .x_off = 0,
@@ -94,11 +93,11 @@ pub const App = struct {
 
         win.clear();
 
-        var statusLineWin = win.child(self.statusLine.win_opts);
-        var editorWin = win.child(self.editor.win_opts);
+        var status_line_win = win.child(self.statusLine.win_opts);
+        var editor_win = win.child(self.editor.wins_opts.win);
 
-        try self.statusLine.draw(&statusLineWin);
-        try self.editor.draw(&editorWin);
+        try self.statusLine.draw(&status_line_win);
+        try self.editor.draw(&editor_win);
     }
 
     fn handleEvent(self: *Self, event: Types.Event) !void {
@@ -138,7 +137,6 @@ pub const App = struct {
         const file_contents = try self.file.readToEndAlloc(self.allocator, file_size);
         defer self.allocator.free(file_contents);
 
-        // TODO: App should not access editor's buff directly
         try self.editor.text_buffer.insert(file_contents, self.editor.getAbsRow(), self.editor.getAbsCol());
         try self.editor.text_buffer.moveCursor(0, 0);
     }

@@ -131,7 +131,13 @@ pub fn GapBuffer(comptime T: type) type {
             while (buff_idx < self.gap_start) {
                 const curr_ch = self.buffer[buff_idx];
                 if (curr_ch == '\n') {
-                    try self.lines.append(Line{ .offset = offset, .index = line_idx, .len = len, .last_char = last_char, .indent = curr_indent });
+                    try self.lines.append(Line{
+                        .offset = offset,
+                        .index = line_idx,
+                        .len = len,
+                        .last_char = last_char,
+                        .indent = curr_indent,
+                    });
                     len = 0;
                     line_idx += 1;
                     offset = buff_idx + 1;
@@ -159,7 +165,13 @@ pub fn GapBuffer(comptime T: type) type {
             while (buff_idx < self.buffer.len) {
                 const curr_ch = self.buffer[buff_idx];
                 if (curr_ch == '\n') {
-                    try self.lines.append(Line{ .offset = offset, .index = line_idx, .len = len, .last_char = last_char, .indent = curr_indent });
+                    try self.lines.append(Line{
+                        .offset = offset,
+                        .index = line_idx,
+                        .len = len,
+                        .last_char = last_char,
+                        .indent = curr_indent,
+                    });
                     len = 0;
                     line_idx += 1;
                     offset = buff_idx - self.gapSize() + 1;
@@ -181,7 +193,13 @@ pub fn GapBuffer(comptime T: type) type {
                 buff_idx += 1;
             }
 
-            try self.lines.append(Line{ .offset = offset, .index = line_idx, .len = len, .last_char = last_char, .indent = curr_indent });
+            try self.lines.append(Line{
+                .offset = offset,
+                .index = line_idx,
+                .len = len,
+                .last_char = last_char,
+                .indent = curr_indent,
+            });
         }
 
         pub fn getLines(self: *Self) ![]Line {
@@ -391,7 +409,8 @@ pub fn GapBuffer(comptime T: type) type {
 
             const index = line.offset + col;
 
-            if (line.offset >= self.gap_start or (line.offset <= self.gap_start and index >= self.gap_start)) {
+            if (line.offset >= self.gap_start or (line.offset <= self.gap_start and index >= self.gap_start))
+            {
                 return index + self.gapSize();
             } else {
                 return index;
@@ -438,7 +457,13 @@ pub fn GapBuffer(comptime T: type) type {
             const lines = try self.getLines();
 
             for (lines) |line| {
-                std.debug.print("{}  {}  {} {c} {}\n", .{ line.index, line.len, line.offset, line.last_char orelse '_', line.indent });
+                std.debug.print("{}  {}  {} {c} {}\n", .{
+                    line.index,
+                    line.len,
+                    line.offset,
+                    line.last_char orelse '_',
+                    line.indent,
+                });
             }
         }
     };

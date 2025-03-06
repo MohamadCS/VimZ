@@ -62,11 +62,6 @@ pub const TextBuffer = struct {
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = line.len + 1 }, true);
     }
 
-    pub fn deleteWord(self: *Self, row: usize, col: usize) !void {
-        try self.moveCursor(row, col);
-        try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .DelimiterSet = utils.delimters }, false);
-    }
-
     pub fn deleteUnderCursor(self: *Self, row: usize, col: usize) !void {
         try self.moveCursor(row, col);
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = 1 }, false);
@@ -324,5 +319,23 @@ pub const TextBuffer = struct {
         word_pos = try self.findWordEnd(word_pos.row, word_pos.col, subWord);
         word_pos = try self.findCurrentWordBegining(word_pos.row, word_pos.col, subWord);
         return word_pos;
+    }
+
+    pub fn appendNextLine(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+        const line_count = try self.getLineCount();
+        if (row == line_count -| 1) {
+            return .{
+                .row = row,
+                .col = col,
+            };
+        }
+
+        const curr_line = try self.getLineInfo(row);
+        try self.deleteUnderCursor(row, curr_line.len); // remove \n
+        try self.insert(" ", row, curr_line.len); // remove \n
+        return .{
+            .row = row,
+            .col = curr_line.len,
+        };
     }
 };

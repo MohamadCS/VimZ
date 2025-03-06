@@ -4,12 +4,6 @@ const utils = @import("utils.zig");
 const Vimz = @import("app.zig");
 const comps = @import("components.zig");
 
-// TODO:
-// 1. Async - Done
-// 2. Custom theme insteaf of vaxis style
-// allowing for more control when no theme is selected
-// and for more customizable option.
-
 pub const StatusLine = struct {
     left_comps: std.ArrayList(Component),
     right_comps: std.ArrayList(Component),
@@ -143,15 +137,13 @@ pub const StatusLine = struct {
     }
 
     pub fn updateAsync(self: *Self) !void {
-        for (self.left_comps.items) |*comp| {
-            if (comp.async_update) {
-                try comp.update_func(comp);
-            }
-        }
+        const comp_lists_arr = [_][]Component{ self.left_comps.items, self.right_comps.items };
 
-        for (self.right_comps.items) |*comp| {
-            if (comp.async_update) {
-                try comp.update_func(comp);
+        for (&comp_lists_arr) |comp_list| {
+            for (comp_list) |*comp| {
+                if (comp.async_update) {
+                    try comp.update_func(comp);
+                }
             }
         }
     }
