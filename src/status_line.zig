@@ -19,6 +19,7 @@ pub const StatusLine = struct {
 
     async_thread: struct {
         thread: std.Thread = undefined,
+        enabled: bool = false,
         allocator: std.mem.Allocator = undefined,
         gpa: std.heap.GeneralPurposeAllocator(.{}) = .{},
 
@@ -57,7 +58,10 @@ pub const StatusLine = struct {
         try self.async_thread.setup();
         try comps.addComps();
         _ = self.win_opts;
-        self.async_thread.thread = try std.Thread.spawn(.{}, StatusLine.work, .{});
+
+        if (self.async_thread.enabled) {
+            self.async_thread.thread = try std.Thread.spawn(.{}, StatusLine.work, .{});
+        }
     }
 
     pub fn init(allocator: std.mem.Allocator) !Self {
@@ -123,6 +127,10 @@ pub const StatusLine = struct {
 
         newComp.style = newComp.style orelse self.style;
         newComp.allocator = if (newComp.async_update) self.async_thread.allocator else self.allocator;
+
+        if (newComp.async_update) {
+            self.async_thread.enabled = true;
+        }
 
         switch (pos) {
             .Left => {

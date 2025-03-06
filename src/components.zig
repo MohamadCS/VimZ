@@ -4,7 +4,6 @@ const utils = @import("utils.zig");
 const Vimz = Api.Vimz;
 
 pub fn addComps() !void {
-
     try Api.addStatusLineComp(
         .{
             .update_func = &updateMode,
