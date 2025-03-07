@@ -110,6 +110,6 @@ fn updateGitBranch(comp: *Api.StatusLine.Component) !void {
     comp.hide = false;
 
     try comp.setText("{s}", .{
-        text[0 .. text.len - 1],
+        text[0..text.len -| 1],
     });
 }

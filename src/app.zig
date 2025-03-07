@@ -4,6 +4,7 @@ const utils = @import("utils.zig");
 const Logger = @import("logger.zig").Logger;
 const target = @import("builtin").target;
 
+pub const Theme = @import("theme.zig");
 pub const Comps = @import("components.zig");
 pub const Editor = @import("editor.zig").Editor;
 pub const Types = @import("types.zig");
@@ -20,6 +21,8 @@ pub const App = struct {
     vx: vaxis.Vaxis,
 
     allocator: Allocator,
+
+    theme: Theme,
 
     quit: bool,
 
@@ -40,6 +43,7 @@ pub const App = struct {
             .vx = try vaxis.init(allocator, .{}),
             .quit = false,
             .statusLine = try StatusLine.init(allocator),
+            .theme = .{},
             .editor = try Editor.init(allocator),
         };
     }
@@ -124,7 +128,6 @@ pub const App = struct {
     }
 
     pub fn run(self: *Self) !void {
-
         self.loop = vaxis.Loop(Types.Event){
             .tty = &self.tty,
             .vaxis = &self.vx,
@@ -144,6 +147,9 @@ pub const App = struct {
         // Settings
         try self.vx.enterAltScreen(writer);
         try self.vx.queryTerminal(writer, 0.1 * std.time.ns_per_s);
+        try self.vx.setTerminalBackgroundColor(writer, self.theme.bg.rgb);
+        try self.vx.setTerminalForegroundColor(writer, self.theme.fg.rgb);
+        try self.vx.setTerminalCursorColor(writer, self.theme.cursor.rgb);
 
         try self.statusLine.setup();
         try self.editor.setup();

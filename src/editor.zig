@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const vaxis = @import("vaxis");
 
 const utils = @import("utils.zig");
+const Api = @import("api.zig");
 const vimz = @import("app.zig");
 
 const TextBuffer = @import("text_buffer.zig").TextBuffer;
@@ -29,11 +30,6 @@ pub const Editor = struct {
     cmd_trie: Trie,
 
     cursor: vimz.Types.CursorState,
-
-    // TODO: change to theme
-    fg: vaxis.Color = .{
-        .rgb = .{ 87, 82, 121 },
-    },
 
     wins_opts: struct {
         win: vaxis.Window.ChildOptions = .{},
@@ -242,13 +238,17 @@ pub const Editor = struct {
     pub fn draw(self: *Self, editorWin: *vaxis.Window) !void {
         const text_win = editorWin.child(self.wins_opts.text);
         const line_win = editorWin.child(self.wins_opts.rows_col);
+        const theme = try Api.getTheme();
 
         const x = @min(text_win.height, try self.text_buffer.getLineCount() -| self.top -| 1);
         for (0..x) |row| {
             for (0..self.row_numbers.?[row].len) |i| {
                 line_win.writeCell(@intCast(i), @intCast(row), vaxis.Cell{ .char = .{
                     .grapheme = self.row_numbers.?[row][i .. i + 1],
-                }, .style = .{ .fg = self.fg } });
+                }, .style = .{
+                    .fg = theme.fg,
+                    .bg = theme.bg,
+                } });
             }
         }
 
@@ -266,7 +266,10 @@ pub const Editor = struct {
             for (start..end, 0..) |col, virt_col| {
                 text_win.writeCell(@intCast(virt_col), @intCast(virt_row), vaxis.Cell{ .char = .{
                     .grapheme = try self.text_buffer.getSlicedCharAt(row, col),
-                }, .style = .{ .fg = self.fg } });
+                }, .style = .{
+                    .fg = theme.fg,
+                    .bg = theme.bg,
+                } });
             }
         }
 
@@ -308,7 +311,10 @@ pub const Editor = struct {
         InsertNewLine: void,
         AppendNextLine: void,
         WirteAtCursor: []const TextBuffer.CharType,
-        Replicate: vaxis.Key,
+        Replicate: struct {
+            key: vaxis.Key,
+            as_mode: vimz.Types.Mode,
+        },
         SaveFile: void,
 
         pub fn exec(self: Motion, editor: *Editor) anyerror!void {
@@ -373,33 +379,49 @@ pub const Editor = struct {
                     editor.moveAbs(line_count -| 1, editor.getAbsCol());
                 },
                 .DeleteInsideWord => |word_t| {
-                    const new_pos = try editor.text_buffer.deleteInsideWord(editor.getAbsRow(), editor.getAbsCol(), switch (word_t) {
-                        .word => true,
-                        .WORD => false,
-                    });
+                    const new_pos = try editor.text_buffer.deleteInsideWord(
+                        editor.getAbsRow(),
+                        editor.getAbsCol(),
+                        switch (word_t) {
+                            .word => true,
+                            .WORD => false,
+                        },
+                    );
                     editor.moveAbs(new_pos.row, new_pos.col);
                 },
                 .NextWord => |word_t| {
-                    const next_pos = try editor.text_buffer.findNextWord(editor.getAbsRow(), editor.getAbsCol(), switch (word_t) {
-                        .word => true,
-                        .WORD => false,
-                    });
+                    const next_pos = try editor.text_buffer.findNextWord(
+                        editor.getAbsRow(),
+                        editor.getAbsCol(),
+                        switch (word_t) {
+                            .word => true,
+                            .WORD => false,
+                        },
+                    );
                     editor.moveAbs(next_pos.row, next_pos.col);
                 },
                 // BUG: Does not work in last line
                 .PrevWord => |word_t| {
-                    const next_pos = try editor.text_buffer.findWordBeginig(editor.getAbsRow(), editor.getAbsCol(), switch (word_t) {
-                        .word => true,
-                        .WORD => false,
-                    });
+                    const next_pos = try editor.text_buffer.findWordBeginig(
+                        editor.getAbsRow(),
+                        editor.getAbsCol(),
+                        switch (word_t) {
+                            .word => true,
+                            .WORD => false,
+                        },
+                    );
                     editor.moveAbs(next_pos.row, next_pos.col);
                 },
                 // BUG: E at last char goes back to the start of the line.
                 .EndOfWord => |word_t| {
-                    const pos = try editor.text_buffer.findWordEnd(editor.getAbsRow(), editor.getAbsCol(), switch (word_t) {
-                        .word => true,
-                        .WORD => false,
-                    });
+                    const pos = try editor.text_buffer.findWordEnd(
+                        editor.getAbsRow(),
+                        editor.getAbsCol(),
+                        switch (word_t) {
+                            .word => true,
+                            .WORD => false,
+                        },
+                    );
                     editor.moveAbs(pos.row, pos.col);
                 },
 
@@ -419,8 +441,11 @@ pub const Editor = struct {
                     try editor.text_buffer.deleteUnderCursor(editor.getAbsRow(), editor.getAbsCol());
                 },
 
-                .Replicate => |key| {
-                    try editor.handleInput(key);
+                .Replicate => |st| {
+                    const last_mode = editor.mode;
+                    editor.mode = st.as_mode;
+                    try editor.handleInput(st.key);
+                    editor.mode = last_mode;
                 },
                 .AppendNextLine => {
                     const pos = try editor.text_buffer.appendNextLine(editor.getAbsRow(), editor.getAbsCol());
@@ -452,6 +477,12 @@ pub const Editor = struct {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             try Motion.exec(.{ .ChangeMode = .Normal }, self);
             try Motion.exec(.{ .MoveLeft = 1 }, self);
+        } else if (key.matches('j', .{ .ctrl = true })) {
+            try log("Hello", .{});
+            try Motion.exec(.{ .Replicate = .{
+                .key = vaxis.Key{ .codepoint = 'o' },
+                .as_mode = .Normal,
+            } }, self);
         } else if (key.matches(vaxis.Key.tab, .{})) {
             try Motion.exec(.{ .WirteAtCursor = " " ** Editor.indent_size }, self);
         } else if (key.matches(vaxis.Key.backspace, .{})) {

@@ -2,14 +2,18 @@ const std = @import("std");
 
 pub const Vimz = @import("app.zig");
 pub const StatusLine = @import("status_line.zig").StatusLine;
-
-const Types = Vimz.Types;
+pub const Types = Vimz.Types;
 
 const Api = @This();
 
 pub fn getMode() !Types.Mode {
     const app = try Vimz.App.getInstance();
     return app.editor.mode;
+}
+
+pub fn getTheme() !Vimz.Theme {
+    const app = try Vimz.App.getInstance();
+    return app.theme;
 }
 
 pub fn enqueueEvent(event: Types.Event) !void {

@@ -4,6 +4,7 @@ const utils = @import("utils.zig");
 const Vimz = @import("app.zig");
 const comps = @import("components.zig");
 const log = @import("logger.zig").Logger.log;
+const Api = @import("api.zig");
 
 pub const StatusLine = struct {
     left_comps: std.ArrayList(Component),
@@ -29,11 +30,6 @@ pub const StatusLine = struct {
             }
         }
     } = .{},
-
-    style: vaxis.Style = .{
-        .bg = .{ .rgb = .{ 255, 250, 243 } },
-        .fg = .{ .rgb = .{ 87, 82, 121 } },
-    },
 
     const Self = @This();
 
@@ -120,8 +116,12 @@ pub const StatusLine = struct {
 
     pub fn addComp(self: *Self, comp: Component, pos: Position) !void {
         var newComp = comp;
+        const app = try Vimz.App.getInstance();
 
-        newComp.style = newComp.style orelse self.style;
+        newComp.style = newComp.style orelse vaxis.Style{
+            .bg = app.theme.status_line.bg,
+            .fg = app.theme.status_line.fg,
+        };
         newComp.allocator = if (newComp.async_update) self.async_thread.allocator else self.allocator;
 
         if (newComp.async_update) {
@@ -151,7 +151,11 @@ pub const StatusLine = struct {
     }
 
     pub fn draw(self: *Self, win: *vaxis.Window) !void {
-        win.fill(.{ .style = self.style });
+        const theme = try Api.getTheme();
+        win.fill(.{ .style = vaxis.Style{
+            .bg = theme.status_line.bg,
+            .fg = theme.status_line.fg,
+        } });
 
         self.mutex.lock();
 
