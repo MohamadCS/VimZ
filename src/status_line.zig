@@ -3,6 +3,7 @@ const vaxis = @import("vaxis");
 const utils = @import("utils.zig");
 const Vimz = @import("app.zig");
 const comps = @import("components.zig");
+const log = @import("logger.zig").Logger.log;
 
 pub const StatusLine = struct {
     left_comps: std.ArrayList(Component),
@@ -76,6 +77,7 @@ pub const StatusLine = struct {
         const UpdateFunction = *const fn (comp: *StatusLine.Component) anyerror!void;
         update_func: UpdateFunction,
 
+        icon: ?[]const u8 = null,
         text: ?[]const u8 = null,
 
         id: u16 = 0,
@@ -158,14 +160,27 @@ pub const StatusLine = struct {
             if (!comp.async_update) {
                 try comp.update_func(comp);
             }
+
             if (!comp.hide) {
                 curr_col_offset += comp.left_padding;
+
+                if (comp.icon) |icon| {
+                    _ = win.printSegment(vaxis.Segment{
+                        .text = icon,
+                        .style = comp.style.?,
+                    }, .{ .col_offset = curr_col_offset });
+
+                    curr_col_offset += 2;
+                }
+
                 _ = win.printSegment(vaxis.Segment{
                     .text = comp.text orelse "",
                     .style = comp.style.?,
                 }, .{ .col_offset = curr_col_offset });
 
-                curr_col_offset += @intCast(if (comp.text) |text| text.len else 0 + comp.right_padding);
+                const text_len = if (comp.text) |text| text.len else 0;
+                try log("{}", .{text_len});
+                curr_col_offset += @intCast(text_len + comp.right_padding);
             }
         }
 
@@ -177,11 +192,21 @@ pub const StatusLine = struct {
             }
 
             if (!comp.hide) {
-                const col_offset: u16 = @intCast(curr_col_offset -| comp.right_padding -| (if (comp.text) |text| text.len else 0));
+                const text_len = if (comp.text) |text| text.len else 0;
+                const col_offset: u16 = @intCast(curr_col_offset -| comp.right_padding -| text_len);
                 _ = win.printSegment(vaxis.Segment{
                     .text = comp.text orelse "",
                     .style = comp.style.?,
                 }, .{ .col_offset = @intCast(col_offset) });
+
+                if (comp.icon) |icon| {
+                    _ = win.printSegment(vaxis.Segment{
+                        .text = icon,
+                        .style = comp.style.?,
+                    }, .{ .col_offset = curr_col_offset });
+
+                    curr_col_offset -= 2;
+                }
 
                 curr_col_offset = col_offset -| comp.left_padding;
             }

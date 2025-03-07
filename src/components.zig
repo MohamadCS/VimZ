@@ -2,6 +2,7 @@ const Api = @import("api.zig");
 const std = @import("std");
 const utils = @import("utils.zig");
 const Vimz = Api.Vimz;
+const log = @import("logger.zig").Logger.log;
 
 pub fn addComps() !void {
     try Api.addStatusLineComp(
@@ -15,6 +16,7 @@ pub fn addComps() !void {
         .{
             .update_func = &updateGitBranch,
             .async_update = true,
+            .icon = "",
         },
         .Left,
     );
@@ -42,10 +44,13 @@ pub fn addComps() !void {
 }
 
 fn updateFileName(comp: *Api.StatusLine.Component) !void {
-    const file_name = try Api.getCurrBufferName();
-    const saved_text = if (try Api.isCurrBufferSaved()) "" else "[+]";
-    try comp.setText("{s} {s}", .{ file_name, saved_text });
+    var it = std.mem.splitBackwardsAny(u8, try Api.getCurrBufferName(), "/");
+
+    const file_name = it.next() orelse "no-name";
+
+    try comp.setText("{s}", .{file_name});
     comp.style.?.italic = true;
+    comp.icon = if (try Api.isCurrBufferSaved()) null else "";
 }
 
 fn updateMode(comp: *Api.StatusLine.Component) !void {
@@ -104,7 +109,7 @@ fn updateGitBranch(comp: *Api.StatusLine.Component) !void {
 
     comp.hide = false;
 
-    try comp.setText(" {s}", .{
-        text,
+    try comp.setText("{s}", .{
+        text[0 .. text.len - 1],
     });
 }

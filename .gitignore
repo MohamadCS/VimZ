@@ -2,3 +2,5 @@
 zig-out/
 log
 error
+tests
+tests
