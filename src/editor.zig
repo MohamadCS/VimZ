@@ -645,6 +645,10 @@ pub const Editor = struct {
 
     // Switch is cleaner, but this is the vaxis limitation.
     pub fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
+        if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
+            self.repeat = null;
+        }
+
         if (std.ascii.isDigit(@intCast(key.codepoint))) {
             const d = (key.codepoint - '0');
             if (self.repeat) |num| {
@@ -826,69 +830,32 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
     .{
         "diw",
         &.{
-            .{ .DeleteInsideWord = .word },
+            Editor.Motion{ .DeleteInsideWord = .word },
         },
     },
     .{
         "diW",
         &.{
-            .{ .DeleteInsideWord = .WORD },
+            Editor.Motion{ .DeleteInsideWord = .WORD },
         },
     },
     .{
         "ciw",
         &.{
-            .{ .DeleteInsideWord = .word },
-            .{ .ChangeMode = vimz.Types.Mode.Insert },
+            Editor.Motion{ .DeleteInsideWord = .word },
+            Editor.Motion{ .ChangeMode = vimz.Types.Mode.Insert },
         },
     },
     .{
         "ciW", &.{
-            .{ .DeleteInsideWord = .WORD },
-            .{ .ChangeMode = vimz.Types.Mode.Insert },
-        },
-    },
-    .{
-        "dk",
-        &.{
-            .{
-                .DeleteLine = .{
-                    .include_end_line = true,
-                    .start_idx = 0,
-                },
-            },
-            .{
-                .MoveUp = 1,
-            },
-            .{
-                .DeleteLine = .{
-                    .include_end_line = true,
-                    .start_idx = 0,
-                },
-            },
-        },
-    },
-    .{
-        "dj",
-        &.{
-            .{
-                .DeleteLine = .{
-                    .include_end_line = true,
-                    .start_idx = 0,
-                },
-            },
-            .{
-                .DeleteLine = .{
-                    .include_end_line = true,
-                    .start_idx = 0,
-                },
-            },
+            Editor.Motion{ .DeleteInsideWord = .WORD },
+            Editor.Motion{ .ChangeMode = vimz.Types.Mode.Insert },
         },
     },
     .{
         "dd",
         &.{
-            .{
+            Editor.Motion{
                 .DeleteLine = .{
                     .include_end_line = true,
                     .start_idx = 0,
@@ -905,7 +872,7 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
     .{
         ">>",
         &.{
-            .{ .Indent = Editor.indent_size },
+            Editor.Motion{ .Indent = Editor.indent_size },
         },
     },
 });

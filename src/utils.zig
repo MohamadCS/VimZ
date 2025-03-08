@@ -56,7 +56,7 @@ pub const delimters = std.StaticStringMap(void).initComptime(.{
 
 pub fn digitNum(comptime T: type, x: T) usize {
     comptime switch (@typeInfo(T)) {
-        .Int => {},
+        .int => {},
         inline else => {
             std.process.exit(1);
         },

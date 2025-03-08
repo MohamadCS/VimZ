@@ -11,7 +11,7 @@ const Error = error{
 
 pub fn GapBuffer(comptime T: type) type {
     comptime switch (@typeInfo(T)) {
-        .Int => {},
+        .int => {},
         else => {
             try std.io.getStdErr().write("Type must be an integer\n");
             std.exit(0);

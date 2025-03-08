@@ -20,7 +20,7 @@ orange: Color = .{ .rgb = .{ 234, 157, 52 } },
 yellow: Color = .{ .rgb = .{ 234, 157, 52 } },
 
 cursor: Color = .{ .rgb = .{ 87, 82, 121 } },
-highlight: Color = .{ .rgb =.{223, 218, 217} },
+highlight: Color = .{ .rgb = .{ 223, 218, 217 } },
 bg: Color = .{ .rgb = .{ 250, 244, 237 } },
 fg: Color = .{ .rgb = .{ 87, 82, 121 } },
 
