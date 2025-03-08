@@ -64,12 +64,13 @@ pub const TextBuffer = struct {
     /// Deletes the interval between start and end, returns the begining.
     pub fn deleteInterval(self: *Self, start: Position, end: Position) !Position {
         self.changed = true;
-        try self.moveCursor(start.row, start.col);
         const start_idx = try self.gap_buffer.getIdx(start.row, start.col);
         const end_idx = try self.gap_buffer.getIdx(end.row, end.col);
+        const begin_pos = if (start_idx < end_idx) start else end;
+        try self.moveCursor(begin_pos.row, begin_pos.col);
         const size = @max(start_idx, end_idx) - @min(start_idx, end_idx) + 1;
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = size }, false);
-        return if (start_idx == @min(start_idx, end_idx)) start else end;
+        return begin_pos;
     }
 
     pub fn findCurrentWordBegining(self: *Self, row: usize, col: usize, subWord: bool) !Position {

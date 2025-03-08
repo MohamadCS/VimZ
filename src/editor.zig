@@ -234,7 +234,7 @@ pub const Editor = struct {
         var slices = try self.allocator.alloc([]const TextBuffer.CharType, height);
 
         for (0..slices.len) |row| {
-            const row_num = if (row == self.cursor.row) self.getAbsRow() else (@max(row, self.cursor.row) - @min(row, self.cursor.row));
+            const row_num = if (row == self.cursor.row) (self.getAbsRow() + 1) else (@max(row, self.cursor.row) - @min(row, self.cursor.row));
 
             slices[row] = try std.fmt.allocPrint(self.allocator, "{}", .{row_num});
         }
@@ -529,10 +529,10 @@ pub const Editor = struct {
                 },
                 .SaveFile => {
                     const buffers = editor.text_buffer.gap_buffer.getBuffers();
-                    var file: std.fs.File = try std.fs.cwd().openFile(editor.file_name, .{ .mode = .read_write });
+                    var file: std.fs.File = try std.fs.cwd().createFile(editor.file_name, .{});
                     defer file.close();
                     for (buffers) |buffer| {
-                        try file.writer().print("{s}", .{buffer});
+                        try file.writeAll(buffer);
                     }
                     editor.text_buffer.changed = false;
                 },
@@ -569,6 +569,10 @@ pub const Editor = struct {
                     .col = self.getAbsCol(),
                 },
             } }, self);
+        } else if (key.matches('v', .{})) {
+            try Motion.exec(.{ .ChangeMode = .Normal }, self);
+        } else {
+            try Motion.exec(.{ .Replicate = .{ .as_mode = .Normal, .key = key } }, self);
         }
     }
 

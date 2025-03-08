@@ -401,16 +401,8 @@ pub fn GapBuffer(comptime T: type) type {
         pub inline fn getIdx(self: *Self, row: usize, col: usize) !usize {
             try self.updateLines();
 
-            assert(row < self.lines.items.len);
 
             const line = self.lines.items[row];
-
-
-            if(row == self.lines.items.len -| 1) {
-                assert(col < line.len);
-            } else {
-                assert(col <= line.len);
-            }
 
             const index = line.offset + col;
 
