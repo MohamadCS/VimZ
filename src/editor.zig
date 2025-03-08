@@ -753,6 +753,34 @@ pub const Editor = struct {
             .Deciding => {},
         }
     }
+
+    pub fn handleMouseEvent(self: *Self, mouse_event: vaxis.Mouse) !void {
+        switch (mouse_event.type) {
+            .press => {
+                try Motion.exec(.{ .ChangeMode = .Normal }, self);
+                self.moveAbs(
+                    self.top + mouse_event.row -| @abs(self.wins_opts.text.y_off),
+                    self.left + mouse_event.col -| @abs(self.wins_opts.text.x_off),
+                );
+            },
+            .drag => {
+                self.moveAbs(
+                    self.top + mouse_event.row -| @abs(self.wins_opts.text.y_off),
+                    self.left + mouse_event.col -| @abs(self.wins_opts.text.x_off),
+                );
+
+                if (self.mode != .Visual) {
+                    try Motion.exec(.{ .ChangeMode = .Visual }, self);
+                    self.vis_start = .{
+                        .row = self.getAbsRow(),
+                        .col = self.getAbsCol(),
+                    };
+                }
+            },
+            .release => {},
+            else => {},
+        }
+    }
 };
 
 // Pending commands: the order of motions is the order of their exection.

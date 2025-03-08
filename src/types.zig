@@ -6,6 +6,7 @@ pub const Event = union(enum) {
     key_press: vaxis.Key,
     winsize: vaxis.Winsize,
     refresh_status_line: void,
+    mouse: vaxis.Mouse,
 };
 
 // Move to dedicated types file

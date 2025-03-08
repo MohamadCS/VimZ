@@ -114,6 +114,9 @@ pub const App = struct {
                 }
                 try self.editor.handleInput(key);
             },
+            .mouse => |mouse| {
+                try self.editor.handleMouseEvent(mouse);
+            },
             .refresh_status_line => {},
         }
     }
@@ -150,6 +153,7 @@ pub const App = struct {
         try self.vx.setTerminalBackgroundColor(writer, self.theme.bg.rgb);
         try self.vx.setTerminalForegroundColor(writer, self.theme.fg.rgb);
         try self.vx.setTerminalCursorColor(writer, self.theme.cursor.rgb);
+        try self.vx.setMouseMode(writer, true);
 
         try self.statusLine.setup();
         try self.editor.setup();

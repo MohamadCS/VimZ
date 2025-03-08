@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Error = error {
+const Error = error{
     NotInGitRepo,
 };
 
