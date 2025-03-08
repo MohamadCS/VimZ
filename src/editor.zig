@@ -31,6 +31,9 @@ pub const Editor = struct {
 
     cursor: vimz.Types.CursorState,
 
+    vis_col: usize = 0,
+    vis_row: usize = 0,
+
     wins_opts: struct {
         win: vaxis.Window.ChildOptions = .{},
         text: vaxis.Window.ChildOptions = .{},
@@ -206,7 +209,7 @@ pub const Editor = struct {
         const line = try self.text_buffer.getLineInfo(self.getAbsRow());
         const max_col = line.len;
 
-        if (self.mode == vimz.Types.Mode.Normal) {
+        if (self.mode == .Normal or self.mode == .Visual) {
             if (self.getAbsCol() >= max_col) {
                 self.left = @min(self.left, max_col -| 1);
                 self.cursor.col = @intCast(max_col -| self.left -| 1);
@@ -233,6 +236,33 @@ pub const Editor = struct {
             slices[row] = try std.fmt.allocPrint(self.allocator, "{}", .{row_num});
         }
         self.row_numbers = slices;
+    }
+
+    pub fn highlight(self: Self, row: usize, col: usize) bool {
+        const min_row = @min(self.getAbsRow(), self.vis_row);
+        const max_row = @max(self.getAbsRow(), self.vis_row);
+        const max_rows_col = if (max_row == self.getAbsRow()) self.getAbsCol() else self.vis_col;
+        const min_rows_col = if (min_row == self.getAbsRow()) self.getAbsCol() else self.vis_col;
+
+        const min_col = @min(self.getAbsCol(),self.vis_col);
+        const max_col = @max(self.getAbsCol(),self.vis_col);
+
+        if (row < max_row and row > min_row) {
+            return true;
+        } else if (row == max_row and row == min_row) {
+            if (col >= min_col and col <= max_col) {
+                return true;
+            }
+        } else if (row == max_row) {
+            if (col <= max_rows_col) {
+                return true;
+            }
+        } else if (row == min_row) {
+            if (col >= min_rows_col) {
+                return true;
+            }
+        }
+        return false;
     }
 
     pub fn draw(self: *Self, editorWin: *vaxis.Window) !void {
@@ -268,7 +298,7 @@ pub const Editor = struct {
                     .grapheme = try self.text_buffer.getSlicedCharAt(row, col),
                 }, .style = .{
                     .fg = theme.fg,
-                    .bg = theme.bg,
+                    .bg = if (self.mode == .Visual and self.highlight(row, col)) theme.highlight else theme.bg,
                 } });
             }
         }
@@ -281,6 +311,7 @@ pub const Editor = struct {
             .Normal => try self.handleNormalMode(key),
             .Insert => try self.handleInsertMode(key),
             .Pending => try self.handlePendingCommand(key),
+            .Visual => try self.handleVisualMode(key),
         }
     }
 
@@ -473,6 +504,20 @@ pub const Editor = struct {
         }
     }
 
+    pub fn handleVisualMode(self: *Self, key: vaxis.Key) !void {
+        if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
+            try Motion.exec(.{ .ChangeMode = .Normal }, self);
+        } else if (key.matches('l', .{})) {
+            try Motion.exec(.{ .MoveRight = 1 }, self);
+        } else if (key.matches('j', .{})) {
+            try Motion.exec(.{ .MoveDown = 1 }, self);
+        } else if (key.matches('h', .{})) {
+            try Motion.exec(.{ .MoveLeft = 1 }, self);
+        } else if (key.matches('k', .{})) {
+            try Motion.exec(.{ .MoveUp = 1 }, self);
+        }
+    }
+
     pub fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             try Motion.exec(.{ .ChangeMode = .Normal }, self);
@@ -545,6 +590,10 @@ pub const Editor = struct {
             try Motion.exec(.{ .SaveFile = {} }, self);
         } else if (key.matches('q', .{})) {
             try Motion.exec(.{ .Quit = {} }, self);
+        } else if (key.matches('v', .{})) {
+            try Motion.exec(.{ .ChangeMode = .Visual }, self);
+            self.vis_col = self.getAbsCol();
+            self.vis_row = self.getAbsRow();
         } else if (key.matches('i', .{})) {
             try Motion.exec(.{ .ChangeMode = .Insert }, self);
         } else if (key.matches('a', .{})) {

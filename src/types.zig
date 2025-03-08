@@ -24,4 +24,5 @@ pub const Mode = enum {
     Normal,
     Insert,
     Pending,
+    Visual,
 };

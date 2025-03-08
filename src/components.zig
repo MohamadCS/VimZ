@@ -55,20 +55,25 @@ fn updateFileName(comp: *Api.StatusLine.Component) !void {
 
 fn updateMode(comp: *Api.StatusLine.Component) !void {
     const mode = try Api.getMode();
+    const theme = try Api.getTheme();
     var text: []const u8 = undefined;
 
     switch (mode) {
         .Normal => {
             text = "NORMAL";
-            comp.style.?.fg = .{ .rgb = .{ 215, 130, 126 } };
+            comp.style.?.fg = theme.red;
         },
         .Insert => {
             text = "INSERT";
-            comp.style.?.fg = .{ .rgb = .{ 86, 148, 159 } };
+            comp.style.?.fg = theme.blue;
         },
         .Pending => {
             text = "O-PENDING";
-            comp.style.?.fg = .{ .rgb = .{ 215, 130, 126 } };
+            comp.style.?.fg = theme.red;
+        },
+        .Visual => {
+            text = "VISUAL";
+            comp.style.?.fg = theme.purple;
         },
     }
 
@@ -79,7 +84,8 @@ fn updateMode(comp: *Api.StatusLine.Component) !void {
 
 fn updateRowCol(comp: *Api.StatusLine.Component) !void {
     try comp.setText("{}:{}", .{ try Api.getAbsCursorRow() + 1, try Api.getAbsCursorCol() + 1 });
-    comp.style.?.fg = .{ .rgb = .{ 215, 130, 126 } };
+    const theme = try Api.getTheme();
+    comp.style.?.fg = theme.red;
     comp.style.?.bold = true;
 }
 
