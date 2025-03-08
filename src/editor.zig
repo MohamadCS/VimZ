@@ -30,6 +30,8 @@ pub const Editor = struct {
 
     cmd_trie: Trie,
 
+    repeat: ?usize = null,
+
     cursor: vimz.Types.CursorState,
 
     vis_start: vimz.Types.Position = .{
@@ -78,6 +80,13 @@ pub const Editor = struct {
             }
             self.allocator.free(row_numbers);
         }
+    }
+
+    pub inline fn getAbsCursorPos(self: Self) vimz.Types.Position {
+        return .{
+            .row = self.getAbsRow(),
+            .col = self.getAbsCol(),
+        };
     }
 
     pub inline fn getAbsCol(self: Self) usize {
@@ -550,16 +559,18 @@ pub const Editor = struct {
     }
 
     pub fn handleVisualMode(self: *Self, key: vaxis.Key) !void {
+        if (std.ascii.isDigit(@intCast(key.codepoint))) {
+            const d = (key.codepoint - '0');
+            if (self.repeat) |num| {
+                self.repeat = num * 10 + d;
+            } else {
+                self.repeat = d;
+            }
+            return;
+        }
+
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             try Motion.exec(.{ .ChangeMode = .Normal }, self);
-        } else if (key.matches('l', .{})) {
-            try Motion.exec(.{ .MoveRight = 1 }, self);
-        } else if (key.matches('j', .{})) {
-            try Motion.exec(.{ .MoveDown = 1 }, self);
-        } else if (key.matches('h', .{})) {
-            try Motion.exec(.{ .MoveLeft = 1 }, self);
-        } else if (key.matches('k', .{})) {
-            try Motion.exec(.{ .MoveUp = 1 }, self);
         } else if (key.matches('d', .{})) {
             try Motion.exec(.{ .ChangeMode = .Normal }, self);
             try Motion.exec(.{ .DeleteInterval = .{
@@ -608,7 +619,6 @@ pub const Editor = struct {
             try Motion.exec(.{ .MoveDown = 1 }, self);
             try Motion.exec(.{ .Indent = indent }, self);
             try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
-            try self.enterInsertAfter();
         } else if (key.text) |text| {
             try Motion.exec(Motion{ .WirteAtCursor = text }, self);
         }
@@ -635,91 +645,112 @@ pub const Editor = struct {
 
     // Switch is cleaner, but this is the vaxis limitation.
     pub fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
-        if (key.matches('l', .{})) {
-            try Motion.exec(.{ .MoveRight = 1 }, self);
-        } else if (key.matches('j', .{})) {
-            try Motion.exec(.{ .MoveDown = 1 }, self);
-        } else if (key.matches('h', .{})) {
-            try Motion.exec(.{ .MoveLeft = 1 }, self);
-        } else if (key.matches('k', .{})) {
-            try Motion.exec(.{ .MoveUp = 1 }, self);
-        } else if (key.matches('S', .{})) {
-            try Motion.exec(.{ .SaveFile = {} }, self);
-        } else if (key.matches('q', .{})) {
-            try Motion.exec(.{ .Quit = {} }, self);
-        } else if (key.matches('v', .{})) {
-            try Motion.exec(.{ .ChangeMode = .Visual }, self);
-            self.vis_start = .{
-                .col = self.getAbsCol(),
-                .row = self.getAbsRow(),
-            };
-        } else if (key.matches('i', .{})) {
-            try Motion.exec(.{ .ChangeMode = .Insert }, self);
-        } else if (key.matches('a', .{})) {
-            try Motion.exec(.{ .ChangeMode = .Insert }, self);
-            try self.enterInsertAfter();
-        } else if (key.matches('d', .{ .ctrl = true })) {
-            try Motion.exec(.{ .ScrollHalfPageDown = {} }, self);
-        } else if (key.matches('e', .{})) {
-            try Motion.exec(.{ .EndOfWord = .word }, self);
-        } else if (key.matches('J', .{})) {
-            try Motion.exec(.{ .AppendNextLine = {} }, self);
-        } else if (key.matches('E', .{})) {
-            try Motion.exec(.{ .EndOfWord = .WORD }, self);
-        } else if (key.matches('u', .{ .ctrl = true })) {
-            try Motion.exec(.{ .ScrollHalfPageUp = {} }, self);
-        } else if (key.matches('b', .{})) {
-            try Motion.exec(.{ .PrevWord = .word }, self);
-        } else if (key.matches('A', .{})) {
-            try Motion.exec(.{ .ChangeMode = .Insert }, self);
-            try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
-            try self.enterInsertAfter();
-        } else if (key.matches('I', .{})) {
-            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
-            try Motion.exec(.{ .ChangeMode = .Insert }, self);
-        } else if (key.matches('B', .{})) {
-            try Motion.exec(.{ .PrevWord = .WORD }, self);
-        } else if (key.matches('$', .{})) {
-            try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
-        } else if (key.matches('0', .{})) {
-            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
-        } else if (key.matches('_', .{})) {
-            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
-        } else if (key.matches('G', .{})) {
-            try Motion.exec(.{ .LastLine = {} }, self);
-        } else if (key.matches('w', .{})) {
-            try Motion.exec(.{ .NextWord = .word }, self);
-        } else if (key.matches('D', .{})) {
-            try Motion.exec(.{ .DeleteLine = .{
-                .start_idx = self.getAbsCol(),
-                .include_end_line = false,
-            } }, self);
-        } else if (key.matches('W', .{})) {
-            try Motion.exec(.{ .NextWord = .WORD }, self);
-        } else if (key.matches('x', .{})) {
-            try Motion.exec(.{ .DeleteUnderCursor = {} }, self);
-        } else if (key.matches('O', .{})) {
-            const indent = try self.getNextIndent(self.getAbsRow(), false);
-            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
-            try Motion.exec(.{ .InsertNewLine = {} }, self);
-            try Motion.exec(.{ .ChangeMode = .Insert }, self);
-            try Motion.exec(.{ .Indent = indent }, self);
-            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
-            try self.enterInsertAfter();
-        } else if (key.matches('o', .{})) {
-            const indent = try self.getNextIndent(self.getAbsRow(), true);
-            try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
-            try Motion.exec(.{ .ChangeMode = .Insert }, self);
-            try Motion.exec(.{ .MoveRight = 1 }, self);
-            try Motion.exec(.{ .InsertNewLine = {} }, self);
-            try Motion.exec(.{ .MoveDown = 1 }, self);
-            try Motion.exec(.{ .Indent = indent }, self);
-            try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
-            try self.enterInsertAfter();
-        } else {
+        if (std.ascii.isDigit(@intCast(key.codepoint))) {
+            const d = (key.codepoint - '0');
+            if (self.repeat) |num| {
+                self.repeat = num * 10 + d;
+            } else {
+                self.repeat = d;
+            }
+            return;
+        }
+
+        const repeat = self.repeat orelse 1;
+        var is_pending: bool = false;
+        for (0..repeat) |_| {
+            if (key.matches('l', .{})) {
+                try Motion.exec(.{ .MoveRight = 1 }, self);
+            } else if (key.matches('j', .{})) {
+                try Motion.exec(.{ .MoveDown = 1 }, self);
+            } else if (key.matches('h', .{})) {
+                try Motion.exec(.{ .MoveLeft = 1 }, self);
+            } else if (key.matches('k', .{})) {
+                try Motion.exec(.{ .MoveUp = 1 }, self);
+            } else if (key.matches('S', .{})) {
+                try Motion.exec(.{ .SaveFile = {} }, self);
+            } else if (key.matches('q', .{})) {
+                try Motion.exec(.{ .Quit = {} }, self);
+            } else if (key.matches('v', .{})) {
+                try Motion.exec(.{ .ChangeMode = .Visual }, self);
+                self.vis_start = .{
+                    .col = self.getAbsCol(),
+                    .row = self.getAbsRow(),
+                };
+            } else if (key.matches('i', .{})) {
+                try Motion.exec(.{ .ChangeMode = .Insert }, self);
+            } else if (key.matches('a', .{})) {
+                try Motion.exec(.{ .ChangeMode = .Insert }, self);
+                try self.enterInsertAfter();
+            } else if (key.matches('d', .{ .ctrl = true })) {
+                try Motion.exec(.{ .ScrollHalfPageDown = {} }, self);
+            } else if (key.matches('e', .{})) {
+                try Motion.exec(.{ .EndOfWord = .word }, self);
+            } else if (key.matches('J', .{})) {
+                try Motion.exec(.{ .AppendNextLine = {} }, self);
+            } else if (key.matches('E', .{})) {
+                try Motion.exec(.{ .EndOfWord = .WORD }, self);
+            } else if (key.matches('u', .{ .ctrl = true })) {
+                try Motion.exec(.{ .ScrollHalfPageUp = {} }, self);
+            } else if (key.matches('b', .{})) {
+                try Motion.exec(.{ .PrevWord = .word }, self);
+            } else if (key.matches('A', .{})) {
+                try Motion.exec(.{ .ChangeMode = .Insert }, self);
+                try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
+                try self.enterInsertAfter();
+            } else if (key.matches('I', .{})) {
+                try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
+                try Motion.exec(.{ .ChangeMode = .Insert }, self);
+            } else if (key.matches('B', .{})) {
+                try Motion.exec(.{ .PrevWord = .WORD }, self);
+            } else if (key.matches('$', .{})) {
+                try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
+            } else if (key.matches('0', .{})) {
+                try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
+            } else if (key.matches('_', .{})) {
+                try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
+            } else if (key.matches('G', .{})) {
+                try Motion.exec(.{ .LastLine = {} }, self);
+            } else if (key.matches('w', .{})) {
+                try Motion.exec(.{ .NextWord = .word }, self);
+            } else if (key.matches('D', .{})) {
+                try Motion.exec(.{ .DeleteLine = .{
+                    .start_idx = self.getAbsCol(),
+                    .include_end_line = false,
+                } }, self);
+            } else if (key.matches('W', .{})) {
+                try Motion.exec(.{ .NextWord = .WORD }, self);
+            } else if (key.matches('x', .{})) {
+                try Motion.exec(.{ .DeleteUnderCursor = {} }, self);
+            } else if (key.matches('O', .{})) {
+                const indent = try self.getNextIndent(self.getAbsRow(), false);
+                try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = false } }, self);
+                try Motion.exec(.{ .InsertNewLine = {} }, self);
+                try Motion.exec(.{ .ChangeMode = .Insert }, self);
+                try Motion.exec(.{ .Indent = indent }, self);
+                try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
+                try self.enterInsertAfter();
+            } else if (key.matches('o', .{})) {
+                const indent = try self.getNextIndent(self.getAbsRow(), true);
+                try Motion.exec(.{ .MoveToEndOfLine = {} }, self);
+                try Motion.exec(.{ .ChangeMode = .Insert }, self);
+                try Motion.exec(.{ .MoveRight = 1 }, self);
+                try Motion.exec(.{ .InsertNewLine = {} }, self);
+                try Motion.exec(.{ .MoveDown = 1 }, self);
+                try Motion.exec(.{ .Indent = indent }, self);
+                try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
+                try self.enterInsertAfter();
+            } else {
+                is_pending = true;
+                break;
+            }
+        }
+        if (is_pending) {
             try Motion.exec(.{ .ChangeMode = .Pending }, self);
             try self.handlePendingCommand(key);
+            return;
         }
+
+        self.repeat = null;
     }
 
     pub fn executePendingCommand(self: *Self, cmd_str: []const u8) !void {
@@ -746,7 +777,11 @@ pub const Editor = struct {
         const result = try self.cmd_trie.step(key_text[0]);
         switch (result) {
             .Accept => {
-                try self.executePendingCommand(self.cmd_trie.getCurrentWord());
+                const repeat = self.repeat orelse 1;
+                for (0..repeat) |_| {
+                    try self.executePendingCommand(self.cmd_trie.getCurrentWord());
+                }
+                self.repeat = null;
                 self.cmd_trie.reset();
             },
             .Reject => {
@@ -811,6 +846,43 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
         "ciW", &.{
             .{ .DeleteInsideWord = .WORD },
             .{ .ChangeMode = vimz.Types.Mode.Insert },
+        },
+    },
+    .{
+        "dk",
+        &.{
+            .{
+                .DeleteLine = .{
+                    .include_end_line = true,
+                    .start_idx = 0,
+                },
+            },
+            .{
+                .MoveUp = 1,
+            },
+            .{
+                .DeleteLine = .{
+                    .include_end_line = true,
+                    .start_idx = 0,
+                },
+            },
+        },
+    },
+    .{
+        "dj",
+        &.{
+            .{
+                .DeleteLine = .{
+                    .include_end_line = true,
+                    .start_idx = 0,
+                },
+            },
+            .{
+                .DeleteLine = .{
+                    .include_end_line = true,
+                    .start_idx = 0,
+                },
+            },
         },
     },
     .{

@@ -36,6 +36,11 @@ pub fn getPendingCommand() ![]u8 {
     return app.editor.cmd_trie.curr_seq.items;
 }
 
+pub fn getRepeatCommandNum() !?usize {
+    const app = try Vimz.App.getInstance();
+    return app.editor.repeat;
+}
+
 pub fn getCurrBufferName() ![:0]const u8 {
     const app = try Vimz.App.getInstance();
     return app.editor.file_name;

@@ -90,7 +90,24 @@ fn updateRowCol(comp: *Api.StatusLine.Component) !void {
 }
 
 fn updatePendingCommand(comp: *Api.StatusLine.Component) !void {
-    try comp.setText("{s}", .{try Api.getPendingCommand()});
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+
+    defer {
+        const deinit_status = gpa.deinit();
+        if (deinit_status == .leak) {
+            std.debug.print("mem leak", .{});
+        }
+    }
+
+    const alloc = gpa.allocator();
+    const repeat_str = if (try Api.getRepeatCommandNum()) |num|
+        try std.fmt.allocPrint(alloc, "{}{s}", .{ num, try Api.getPendingCommand() })
+    else
+        try std.fmt.allocPrint(alloc, "{s}", .{try Api.getPendingCommand()});
+
+    defer alloc.free(repeat_str);
+
+    try comp.setText("{s}", .{repeat_str});
     comp.style.?.fg = .{ .rgb = .{ 215, 130, 126 } };
 }
 
