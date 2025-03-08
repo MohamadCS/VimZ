@@ -4,6 +4,7 @@ const testing = std.testing;
 const utils = @import("utils.zig");
 const vimz = @import("app.zig");
 const log = @import("logger.zig").Logger.log;
+const Position = vimz.Types.Position;
 
 pub const GapBuffer = @import("gap_buffer.zig").GapBuffer(TextBuffer.CharType);
 
@@ -60,33 +61,18 @@ pub const TextBuffer = struct {
         try self.gap_buffer.write(text);
     }
 
-    pub inline fn deleteLine(self: *Self, row: usize) !void {
+    /// Deletes the interval between start and end, returns the begining.
+    pub fn deleteInterval(self: *Self, start: Position, end: Position) !Position {
         self.changed = true;
-        try self.moveCursor(row, 0);
-        const line = try self.gap_buffer.getLineInfo(row);
-        try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = line.len + 1 }, true);
+        try self.moveCursor(start.row, start.col);
+        const start_idx = try self.gap_buffer.getIdx(start.row, start.col);
+        const end_idx = try self.gap_buffer.getIdx(end.row, end.col);
+        const size = @max(start_idx, end_idx) - @min(start_idx, end_idx) + 1;
+        try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = size }, false);
+        return if (start_idx == @min(start_idx, end_idx)) start else end;
     }
 
-    pub fn deleteUnderCursor(self: *Self, row: usize, col: usize) !void {
-        self.changed = true;
-        try self.moveCursor(row, col);
-        try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = 1 }, false);
-    }
-
-    // If the current char is whitespace, remove everywhitespace, otherwise
-    // go to the begining of the word, and remove until the end of the word
-    pub fn deleteInsideWord(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
-        self.changed = true;
-        const start_pos = try self.findCurrentWordBegining(row, col, subWord);
-        const end_pos = try self.findCurrentWordEnd(row, col, subWord);
-
-        try self.moveCursor(start_pos.row, start_pos.col);
-        try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = end_pos.col + 1 - start_pos.col }, false);
-
-        return start_pos;
-    }
-
-    pub fn findCurrentWordBegining(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+    pub fn findCurrentWordBegining(self: *Self, row: usize, col: usize, subWord: bool) !Position {
         const line = try self.getLineInfo(row);
 
         if (line.len == 0) {
@@ -338,7 +324,11 @@ pub const TextBuffer = struct {
         }
 
         const curr_line = try self.getLineInfo(row);
-        try self.deleteUnderCursor(row, curr_line.len); // remove \n
+        const end_line_pos = Position{
+            .row = row,
+            .col = curr_line.len,
+        };
+        _ = try self.deleteInterval(end_line_pos, end_line_pos);
         try self.insert(" ", row, curr_line.len); // remove \n
         return .{
             .row = row,

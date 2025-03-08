@@ -405,7 +405,12 @@ pub fn GapBuffer(comptime T: type) type {
 
             const line = self.lines.items[row];
 
-            assert(col < line.len);
+
+            if(row == self.lines.items.len -| 1) {
+                assert(col < line.len);
+            } else {
+                assert(col <= line.len);
+            }
 
             const index = line.offset + col;
 

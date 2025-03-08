@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 const vaxis = @import("vaxis");
@@ -31,8 +32,10 @@ pub const Editor = struct {
 
     cursor: vimz.Types.CursorState,
 
-    vis_col: usize = 0,
-    vis_row: usize = 0,
+    vis_start: vimz.Types.Position = .{
+        .col = 0,
+        .row = 0,
+    },
 
     wins_opts: struct {
         win: vaxis.Window.ChildOptions = .{},
@@ -239,13 +242,19 @@ pub const Editor = struct {
     }
 
     pub fn highlight(self: Self, row: usize, col: usize) bool {
-        const min_row = @min(self.getAbsRow(), self.vis_row);
-        const max_row = @max(self.getAbsRow(), self.vis_row);
-        const max_rows_col = if (max_row == self.getAbsRow()) self.getAbsCol() else self.vis_col;
-        const min_rows_col = if (min_row == self.getAbsRow()) self.getAbsCol() else self.vis_col;
+        switch (self.mode) {
+            .Visual => {},
+            else => {
+                return false;
+            },
+        }
+        const min_row = @min(self.getAbsRow(), self.vis_start.row);
+        const max_row = @max(self.getAbsRow(), self.vis_start.row);
+        const max_rows_col = if (max_row == self.getAbsRow()) self.getAbsCol() else self.vis_start.col;
+        const min_rows_col = if (min_row == self.getAbsRow()) self.getAbsCol() else self.vis_start.col;
 
-        const min_col = @min(self.getAbsCol(),self.vis_col);
-        const max_col = @max(self.getAbsCol(),self.vis_col);
+        const min_col = @min(self.getAbsCol(), self.vis_start.col);
+        const max_col = @max(self.getAbsCol(), self.vis_start.col);
 
         if (row < max_row and row > min_row) {
             return true;
@@ -293,12 +302,22 @@ pub const Editor = struct {
             // to ensure that we only draw what the screen can show
             const start = self.left;
             const end = @min(start + text_win.width, line.len);
+
+            if (line.len == 0 and self.highlight(row, 0)) {
+                text_win.writeCell(0, @intCast(virt_row), vaxis.Cell{ .char = .{
+                    .grapheme = " ",
+                }, .style = .{
+                    .fg = theme.fg,
+                    .bg = theme.highlight,
+                } });
+            }
+
             for (start..end, 0..) |col, virt_col| {
                 text_win.writeCell(@intCast(virt_col), @intCast(virt_row), vaxis.Cell{ .char = .{
                     .grapheme = try self.text_buffer.getSlicedCharAt(row, col),
                 }, .style = .{
                     .fg = theme.fg,
-                    .bg = if (self.mode == .Visual and self.highlight(row, col)) theme.highlight else theme.bg,
+                    .bg = if (self.highlight(row, col)) theme.highlight else theme.bg,
                 } });
             }
         }
@@ -336,10 +355,19 @@ pub const Editor = struct {
         FirstLine: void,
         Indent: usize,
         DeleteAroundWord: void,
-        DeleteLine: void,
+        DeleteLine: struct {
+            include_end_line: bool,
+            start_idx: usize,
+        },
         MoveToEndOfLine: void,
-        MoveToStartOfLine: struct { stopAfterWs: bool },
+        MoveToStartOfLine: struct {
+            stopAfterWs: bool,
+        },
         InsertNewLine: void,
+        DeleteInterval: struct {
+            start: vimz.Types.Position,
+            end: vimz.Types.Position,
+        },
         AppendNextLine: void,
         WirteAtCursor: []const TextBuffer.CharType,
         Replicate: struct {
@@ -389,8 +417,18 @@ pub const Editor = struct {
                 .ChangeMode => |mode| {
                     editor.mode = mode;
                 },
-                .DeleteLine => {
-                    try editor.text_buffer.deleteLine(editor.getAbsRow());
+                .DeleteLine => |st| {
+                    const line = try editor.text_buffer.getLineInfo(editor.getAbsRow());
+                    _ = try editor.text_buffer.deleteInterval(
+                        .{
+                            .row = editor.getAbsRow(),
+                            .col = st.start_idx,
+                        },
+                        .{
+                            .row = editor.getAbsRow(),
+                            .col = if (st.include_end_line) line.len else line.len -| 1,
+                        },
+                    );
                 },
                 .ScrollHalfPageUp => {
                     editor.moveAbs(editor.getAbsRow() -| editor.wins_opts.text.height.? / 2, editor.getAbsCol());
@@ -410,14 +448,14 @@ pub const Editor = struct {
                     editor.moveAbs(line_count -| 1, editor.getAbsCol());
                 },
                 .DeleteInsideWord => |word_t| {
-                    const new_pos = try editor.text_buffer.deleteInsideWord(
-                        editor.getAbsRow(),
-                        editor.getAbsCol(),
-                        switch (word_t) {
-                            .word => true,
-                            .WORD => false,
-                        },
-                    );
+                    const subWord = switch (word_t) {
+                        .word => true,
+                        .WORD => false,
+                    };
+
+                    const start_pos = try editor.text_buffer.findCurrentWordBegining(editor.getAbsRow(), editor.getAbsCol(), subWord);
+                    const end_pos = try editor.text_buffer.findCurrentWordEnd(editor.getAbsRow(), editor.getAbsCol(), subWord);
+                    const new_pos = try editor.text_buffer.deleteInterval(start_pos, end_pos);
                     editor.moveAbs(new_pos.row, new_pos.col);
                 },
                 .NextWord => |word_t| {
@@ -469,7 +507,8 @@ pub const Editor = struct {
                     try editor.text_buffer.insert("\n", editor.getAbsRow(), editor.getAbsCol());
                 },
                 .DeleteUnderCursor => {
-                    try editor.text_buffer.deleteUnderCursor(editor.getAbsRow(), editor.getAbsCol());
+                    const pos = vimz.Types.Position{ .row = editor.getAbsRow(), .col = editor.getAbsCol() };
+                    _ = try editor.text_buffer.deleteInterval(pos, pos);
                 },
 
                 .Replicate => |st| {
@@ -478,6 +517,12 @@ pub const Editor = struct {
                     try editor.handleInput(st.key);
                     editor.mode = last_mode;
                 },
+
+                .DeleteInterval => |st| {
+                    const pos = try editor.text_buffer.deleteInterval(st.start, st.end);
+                    editor.moveAbs(pos.row, pos.col);
+                },
+
                 .AppendNextLine => {
                     const pos = try editor.text_buffer.appendNextLine(editor.getAbsRow(), editor.getAbsCol());
                     editor.moveAbs(pos.row, pos.col);
@@ -515,6 +560,15 @@ pub const Editor = struct {
             try Motion.exec(.{ .MoveLeft = 1 }, self);
         } else if (key.matches('k', .{})) {
             try Motion.exec(.{ .MoveUp = 1 }, self);
+        } else if (key.matches('d', .{})) {
+            try Motion.exec(.{ .ChangeMode = .Normal }, self);
+            try Motion.exec(.{ .DeleteInterval = .{
+                .start = self.vis_start,
+                .end = .{
+                    .row = self.getAbsRow(),
+                    .col = self.getAbsCol(),
+                },
+            } }, self);
         }
     }
 
@@ -592,8 +646,10 @@ pub const Editor = struct {
             try Motion.exec(.{ .Quit = {} }, self);
         } else if (key.matches('v', .{})) {
             try Motion.exec(.{ .ChangeMode = .Visual }, self);
-            self.vis_col = self.getAbsCol();
-            self.vis_row = self.getAbsRow();
+            self.vis_start = .{
+                .col = self.getAbsCol(),
+                .row = self.getAbsRow(),
+            };
         } else if (key.matches('i', .{})) {
             try Motion.exec(.{ .ChangeMode = .Insert }, self);
         } else if (key.matches('a', .{})) {
@@ -630,6 +686,11 @@ pub const Editor = struct {
             try Motion.exec(.{ .LastLine = {} }, self);
         } else if (key.matches('w', .{})) {
             try Motion.exec(.{ .NextWord = .word }, self);
+        } else if (key.matches('D', .{})) {
+            try Motion.exec(.{ .DeleteLine = .{
+                .start_idx = self.getAbsCol(),
+                .include_end_line = false,
+            } }, self);
         } else if (key.matches('W', .{})) {
             try Motion.exec(.{ .NextWord = .WORD }, self);
         } else if (key.matches('x', .{})) {
@@ -724,7 +785,12 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
     .{
         "dd",
         &.{
-            .DeleteLine,
+            .{
+                .DeleteLine = .{
+                    .include_end_line = true,
+                    .start_idx = 0,
+                },
+            },
         },
     },
     .{
