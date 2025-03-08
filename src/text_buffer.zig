@@ -41,12 +41,12 @@ pub const TextBuffer = struct {
     }
 
     pub inline fn getSlicedCharAt(self: *Self, row: usize, col: usize) ![]CharType {
-        const idx = try self.gap_buffer.getIdx(row, col);
+        const idx = try self.gap_buffer.getAbsIdx(row, col);
         return self.gap_buffer.buffer[idx .. idx + 1];
     }
 
     pub inline fn getCharAt(self: *Self, row: usize, col: usize) !CharType {
-        const idx = try self.gap_buffer.getIdx(row, col);
+        const idx = try self.gap_buffer.getAbsIdx(row, col);
         return self.gap_buffer.buffer[idx];
     }
 
@@ -64,11 +64,12 @@ pub const TextBuffer = struct {
     /// Deletes the interval between start and end, returns the begining.
     pub fn deleteInterval(self: *Self, start: Position, end: Position) !Position {
         self.changed = true;
-        const start_idx = try self.gap_buffer.getIdx(start.row, start.col);
-        const end_idx = try self.gap_buffer.getIdx(end.row, end.col);
+        const start_idx = try self.gap_buffer.getRelIdx(start.row, start.col);
+        const end_idx = try self.gap_buffer.getRelIdx(end.row, end.col);
         const begin_pos = if (start_idx < end_idx) start else end;
         try self.moveCursor(begin_pos.row, begin_pos.col);
         const size = @max(start_idx, end_idx) - @min(start_idx, end_idx) + 1;
+        try log("From {} to {}\n", .{ start_idx, end_idx });
         try self.gap_buffer.deleteForwards(GapBuffer.SearchPolicy{ .Number = size }, false);
         return begin_pos;
     }
@@ -239,13 +240,12 @@ pub const TextBuffer = struct {
 
     fn findWordEndAux(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
         const line = try self.getLineInfo(row);
+        const line_count = try self.getLineCount();
 
         if (col + 1 <= line.len -| 1) {
             const pos = self.findCurrentWordEnd(row, col + 1, subWord);
             return pos;
         }
-
-        const line_count = try self.getLineCount();
 
         if (line_count -| 1 == row) {
             return .{
@@ -296,17 +296,22 @@ pub const TextBuffer = struct {
 
         return res;
     }
+
     pub fn findNextWord(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
         var word_pos = try self.findCurrentWordEnd(row, col, subWord);
         const line_count = try self.getLineCount();
 
-        if (row < line_count -| 1) {
-            const next_line = try self.getLineInfo(row + 1);
-            if (next_line.len == 0) {
-                return .{
-                    .row = row + 1,
-                    .col = 0,
-                };
+        const line = try self.getLineInfo(row);
+        // BUG: this happens even if the next word is in the same line
+        if (word_pos.col == line.len -| 1) {
+            if (row < line_count -| 1) {
+                const next_line = try self.getLineInfo(row + 1);
+                if (next_line.len == 0) {
+                    return .{
+                        .row = row + 1,
+                        .col = 0,
+                    };
+                }
             }
         }
 

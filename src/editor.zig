@@ -581,7 +581,6 @@ pub const Editor = struct {
             try Motion.exec(.{ .ChangeMode = .Normal }, self);
             try Motion.exec(.{ .MoveLeft = 1 }, self);
         } else if (key.matches('j', .{ .ctrl = true })) {
-            try log("Hello", .{});
             try Motion.exec(.{ .Replicate = .{
                 .key = vaxis.Key{ .codepoint = 'o' },
                 .as_mode = .Normal,

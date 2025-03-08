@@ -180,6 +180,7 @@ pub fn GapBuffer(comptime T: type) type {
                     non_ws_found = false;
                     curr_indent = 0;
                 } else {
+                    len += 1;
                     if (curr_ch == ' ' and !non_ws_found) {
                         curr_indent += 1;
                     } else {
@@ -187,7 +188,6 @@ pub fn GapBuffer(comptime T: type) type {
                     }
 
                     last_char = if (curr_ch != ' ') curr_ch else last_char;
-                    len += 1;
                 }
 
                 buff_idx += 1;
@@ -277,7 +277,7 @@ pub fn GapBuffer(comptime T: type) type {
 
             switch (searchPolicy) {
                 .Number => |num| {
-                    const maxIdx = @min(self.buffer.len - 1, self.gap_end + num);
+                    const maxIdx = @min(self.buffer.len -| 1, self.gap_end + num);
                     self.gap_end = maxIdx;
                 },
 
@@ -398,9 +398,18 @@ pub fn GapBuffer(comptime T: type) type {
             return i;
         }
 
-        pub inline fn getIdx(self: *Self, row: usize, col: usize) !usize {
+        pub inline fn getRelIdx(self: *Self, row: usize, col: usize) !usize {
             try self.updateLines();
+            const absIdx = try self.getAbsIdx(row, col);
+            // sign that we've added gapSize
+            if (absIdx >= self.gap_start) {
+                return absIdx -| self.gapSize();
+            }
+            return absIdx;
+        }
 
+        pub inline fn getAbsIdx(self: *Self, row: usize, col: usize) !usize {
+            try self.updateLines();
 
             const line = self.lines.items[row];
 

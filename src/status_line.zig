@@ -183,7 +183,6 @@ pub const StatusLine = struct {
                 }, .{ .col_offset = curr_col_offset });
 
                 const text_len = if (comp.text) |text| text.len else 0;
-                try log("{}", .{text_len});
                 curr_col_offset += @intCast(text_len + comp.right_padding);
             }
         }
