@@ -5,8 +5,7 @@ const Allocator = std.mem.Allocator;
 const vaxis = @import("vaxis");
 
 const utils = @import("utils.zig");
-const Api = @import("api.zig");
-const vimz = @import("app.zig");
+const vimz = @import("vimz.zig");
 
 const TextBuffer = @import("text_buffer.zig").TextBuffer;
 const Trie = @import("trie.zig").Trie;
@@ -16,33 +15,32 @@ const log = @import("logger.zig").Logger.log;
 pub const Editor = struct {
     allocator: Allocator,
 
+    core: *vimz.Core = undefined,
+
     text_buffer: TextBuffer,
 
-    top: usize,
+    file_name: [:0]const u8,
 
-    file_name: [:0]const u8 = "",
+    last_cmd: ?[]const u8,
 
-    left: usize,
+    repeat: ?usize,
 
-    mode: vimz.Types.Mode,
-
-    pending_cmd_queue: std.ArrayList(u8),
+    mode: vimz.Mode,
 
     cmd_trie: Trie,
 
-    repeat: ?usize = null,
+    cursor: vimz.CursorState,
 
-    cursor: vimz.Types.CursorState,
+    vis_start: vimz.Position = .{},
 
-    vis_start: vimz.Types.Position = .{
-        .col = 0,
-        .row = 0,
-    },
+    top: usize,
 
-    wins_opts: struct {
-        win: vaxis.Window.ChildOptions = .{},
-        text: vaxis.Window.ChildOptions = .{},
-        rows_col: vaxis.Window.ChildOptions = .{},
+    left: usize,
+
+    win_dims: struct {
+        buff_win_dims: vaxis.Window.ChildOptions = .{},
+        text_win_dims: vaxis.Window.ChildOptions = .{},
+        lines_col_dims: vaxis.Window.ChildOptions = .{},
     } = .{},
 
     row_numbers: ?[]const []const TextBuffer.CharType,
@@ -55,17 +53,20 @@ pub const Editor = struct {
         return Self{
             .allocator = allocator,
             .text_buffer = try TextBuffer.init(allocator),
-            .mode = vimz.Types.Mode.Normal,
+            .mode = .Normal,
             .cursor = .{},
             .cmd_trie = .{},
-            .pending_cmd_queue = std.ArrayList(u8).init(allocator),
             .top = 0,
             .left = 0,
             .row_numbers = null,
+            .file_name = "",
+            .last_cmd = null,
+            .repeat = null,
         };
     }
 
-    pub fn setup(self: *Self) !void {
+    pub fn setup(self: *Self, core: *vimz.Core) !void {
+        self.core = core;
         try self.cmd_trie.init(self.allocator, cmds.keys());
         try self.readFile();
     }
@@ -73,7 +74,6 @@ pub const Editor = struct {
     pub fn deinit(self: *Self) void {
         self.text_buffer.deinit();
         self.cmd_trie.deinit();
-        self.pending_cmd_queue.deinit();
         if (self.row_numbers) |row_numbers| {
             for (row_numbers) |num_slice| {
                 self.allocator.free(num_slice);
@@ -82,7 +82,7 @@ pub const Editor = struct {
         }
     }
 
-    pub inline fn getAbsCursorPos(self: Self) vimz.Types.Position {
+    pub inline fn getAbsCursorPos(self: Self) vimz.Position {
         return .{
             .row = self.getAbsRow(),
             .col = self.getAbsCol(),
@@ -93,13 +93,13 @@ pub const Editor = struct {
         return self.cursor.col + self.left;
     }
 
-    pub inline fn getAbsRow(self: Self) usize {
+    inline fn getAbsRow(self: Self) usize {
         return self.cursor.row + self.top;
     }
 
     fn tryScroll(self: *Self) void {
-        const height = self.wins_opts.text.height.?;
-        const width = self.wins_opts.text.width.?;
+        const height = self.win_dims.text_win_dims.height.?;
+        const width = self.win_dims.text_win_dims.width.?;
         if (self.cursor.row >= height -| 1) {
             self.top += 1;
             self.cursor.row -|= 1;
@@ -148,8 +148,8 @@ pub const Editor = struct {
     }
 
     pub fn moveAbs(self: *Self, row: usize, col: usize) void {
-        const height = self.wins_opts.text.height.?;
-        const width = self.wins_opts.text.width.?;
+        const height = self.win_dims.text_win_dims.height.?;
+        const width = self.win_dims.text_win_dims.width.?;
 
         if (row < self.top + height - 1 and row >= self.top) {
             self.cursor.row = @intCast(row -| self.top);
@@ -170,46 +170,56 @@ pub const Editor = struct {
         }
     }
 
-    pub fn moveUp(self: *Self, steps: u16) void {
+    fn moveUp(self: *Self, steps: u16) void {
         self.cursor.row -|= steps;
         self.tryScroll();
     }
 
-    pub fn moveDown(self: *Self, steps: u16) void {
+    fn moveDown(self: *Self, steps: u16) void {
         self.cursor.row +|= steps;
         self.tryScroll();
     }
 
-    pub fn moveLeft(self: *Self, steps: u16) void {
+    fn moveLeft(self: *Self, steps: u16) void {
         self.cursor.col -|= steps;
         self.tryScroll();
     }
 
-    pub fn moveRight(self: *Self, steps: u16) void {
+    fn moveRight(self: *Self, steps: u16) void {
         self.cursor.col +|= steps;
         self.tryScroll();
     }
 
-    pub fn updateDims(self: *Self) !void {
+    fn updateDims(self: *Self) !void {
+        const win = self.core.vx.window();
+
         const max_digits = utils.digitNum(usize, try self.text_buffer.getLineCount());
 
+        self.win_dims.buff_win_dims = .{
+            .x_off = 0,
+            .y_off = 0,
+            .width = win.width,
+            .height = win.height - 2,
+        };
+
         const x_off = 2;
-        self.wins_opts.rows_col = .{
+        self.win_dims.lines_col_dims = .{
             .x_off = x_off,
             .y_off = 0,
             .width = @intCast(max_digits), // should be current line digit num
-            .height = self.wins_opts.win.height.?,
+            .height = self.win_dims.buff_win_dims.height.?,
         };
 
-        self.wins_opts.text = .{
+        self.win_dims.text_win_dims = .{
             .x_off = @intCast(max_digits + 1 + x_off),
             .y_off = 0,
-            .width = @intCast(self.wins_opts.win.width.? -| max_digits),
-            .height = self.wins_opts.win.height.?,
+            .width = @intCast(self.win_dims.buff_win_dims.width.? -| max_digits),
+            .height = self.win_dims.buff_win_dims.height.?,
         };
     }
 
     pub fn update(self: *Self) !void {
+        try self.updateDims();
         const lines_count = try self.text_buffer.getLineCount();
         const max_row = lines_count -| 1;
 
@@ -239,7 +249,7 @@ pub const Editor = struct {
             self.allocator.free(row_numbers);
         }
 
-        const height = self.wins_opts.rows_col.height.?;
+        const height = self.win_dims.lines_col_dims.height.?;
         var slices = try self.allocator.alloc([]const TextBuffer.CharType, height);
 
         for (0..slices.len) |row| {
@@ -250,7 +260,7 @@ pub const Editor = struct {
         self.row_numbers = slices;
     }
 
-    pub fn highlight(self: Self, row: usize, col: usize) bool {
+    fn highlight(self: Self, row: usize, col: usize) bool {
         switch (self.mode) {
             .Visual => {},
             else => {
@@ -284,12 +294,12 @@ pub const Editor = struct {
     }
 
     pub fn draw(self: *Self, editorWin: *vaxis.Window) !void {
-        const text_win = editorWin.child(self.wins_opts.text);
-        const line_win = editorWin.child(self.wins_opts.rows_col);
-        const theme = try Api.getTheme();
+        const text_win = editorWin.child(self.win_dims.text_win_dims);
+        const line_win = editorWin.child(self.win_dims.lines_col_dims);
+        const theme = try self.core.api.getTheme();
 
-        const x = @min(text_win.height, try self.text_buffer.getLineCount() -| self.top -| 1);
-        for (0..x) |row| {
+        const line_win_max_row = @min(text_win.height, try self.text_buffer.getLineCount() -| self.top -| 1);
+        for (0..line_win_max_row) |row| {
             for (0..self.row_numbers.?[row].len) |i| {
                 line_win.writeCell(@intCast(i), @intCast(row), vaxis.Cell{ .char = .{
                     .grapheme = self.row_numbers.?[row][i .. i + 1],
@@ -300,8 +310,8 @@ pub const Editor = struct {
             }
         }
 
-        const max_row = @min(self.top + text_win.height, try self.text_buffer.getLineCount());
-        for (self.top..max_row, 0..) |row, virt_row| {
+        const text_win_max_row = @min(self.top + text_win.height, try self.text_buffer.getLineCount());
+        for (self.top..text_win_max_row, 0..) |row, virt_row| {
             const line = try self.text_buffer.getLineInfo(row);
 
             if (line.len < self.left) {
@@ -325,7 +335,7 @@ pub const Editor = struct {
                 text_win.writeCell(@intCast(virt_col), @intCast(virt_row), vaxis.Cell{ .char = .{
                     .grapheme = try self.text_buffer.getSlicedCharAt(row, col),
                 }, .style = .{
-                    .fg = theme.fg,
+                    .fg = theme.text,
                     .bg = if (self.highlight(row, col)) theme.highlight else theme.bg,
                 } });
             }
@@ -335,6 +345,11 @@ pub const Editor = struct {
     }
 
     pub fn handleInput(self: *Self, key: vaxis.Key) !void {
+
+        // For some reason, vaxis enters with this key pressed
+        if (key.codepoint == vaxis.Key.f3) {
+            return;
+        }
         switch (self.mode) {
             .Normal => try self.handleNormalMode(key),
             .Insert => try self.handleInsertMode(key),
@@ -350,7 +365,7 @@ pub const Editor = struct {
         MoveDown: usize,
         MoveLeft: usize,
         MoveRight: usize,
-        ChangeMode: vimz.Types.Mode,
+        ChangeMode: vimz.Mode,
         Quit: void,
         ScrollHalfPageUp: void,
         ScrollHalfPageDown: void,
@@ -374,14 +389,14 @@ pub const Editor = struct {
         },
         InsertNewLine: void,
         DeleteInterval: struct {
-            start: vimz.Types.Position,
-            end: vimz.Types.Position,
+            start: vimz.Position,
+            end: vimz.Position,
         },
         AppendNextLine: void,
         WirteAtCursor: []const TextBuffer.CharType,
         Replicate: struct {
             key: vaxis.Key,
-            as_mode: vimz.Types.Mode,
+            as_mode: vimz.Mode,
         },
         SaveFile: void,
 
@@ -420,8 +435,7 @@ pub const Editor = struct {
                     editor.moveAbs(editor.getAbsRow(), col);
                 },
                 .Quit => {
-                    var app = try vimz.App.getInstance();
-                    app.quit = true;
+                    editor.core.quit = true;
                 },
                 .ChangeMode => |mode| {
                     editor.mode = mode;
@@ -440,10 +454,10 @@ pub const Editor = struct {
                     );
                 },
                 .ScrollHalfPageUp => {
-                    editor.moveAbs(editor.getAbsRow() -| editor.wins_opts.text.height.? / 2, editor.getAbsCol());
+                    editor.moveAbs(editor.getAbsRow() -| editor.win_dims.text_win_dims.height.? / 2, editor.getAbsCol());
                 },
                 .ScrollHalfPageDown => {
-                    editor.moveAbs(editor.getAbsRow() +| editor.wins_opts.text.height.? / 2, editor.getAbsCol());
+                    editor.moveAbs(editor.getAbsRow() +| editor.win_dims.text_win_dims.height.? / 2, editor.getAbsCol());
                 },
                 .WirteAtCursor => |text| {
                     try editor.text_buffer.insert(text, editor.getAbsRow(), editor.getAbsCol());
@@ -516,7 +530,7 @@ pub const Editor = struct {
                     try editor.text_buffer.insert("\n", editor.getAbsRow(), editor.getAbsCol());
                 },
                 .DeleteUnderCursor => {
-                    const pos = vimz.Types.Position{ .row = editor.getAbsRow(), .col = editor.getAbsCol() };
+                    const pos = vimz.Position{ .row = editor.getAbsRow(), .col = editor.getAbsCol() };
                     _ = try editor.text_buffer.deleteInterval(pos, pos);
                 },
 
@@ -551,7 +565,7 @@ pub const Editor = struct {
         }
     };
 
-    pub fn enterInsertAfter(self: *Self) !void {
+    fn enterInsertAfter(self: *Self) !void {
         const line = try self.text_buffer.getLineInfo(self.getAbsRow());
         if (line.len > 0) {
             try Motion.exec(.{ .MoveRight = 1 }, self);
@@ -587,7 +601,7 @@ pub const Editor = struct {
         }
     }
 
-    pub fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
+    fn handleInsertMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             try Motion.exec(.{ .ChangeMode = .Normal }, self);
             try Motion.exec(.{ .MoveLeft = 1 }, self);
@@ -624,7 +638,7 @@ pub const Editor = struct {
         }
     }
 
-    pub fn getNextIndent(self: *Self, row: usize, down: bool) !usize {
+    fn getNextIndent(self: *Self, row: usize, down: bool) !usize {
         const line = try self.text_buffer.getLineInfo(row);
         var indent = line.indent;
         if (line.last_char) |ch| {
@@ -644,7 +658,7 @@ pub const Editor = struct {
     }
 
     // Switch is cleaner, but this is the vaxis limitation.
-    pub fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
+    fn handleNormalMode(self: *Self, key: vaxis.Key) !void {
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             self.repeat = null;
         }
@@ -670,8 +684,6 @@ pub const Editor = struct {
                 try Motion.exec(.{ .MoveLeft = 1 }, self);
             } else if (key.matches('k', .{})) {
                 try Motion.exec(.{ .MoveUp = 1 }, self);
-            } else if (key.matches('S', .{})) {
-                try Motion.exec(.{ .SaveFile = {} }, self);
             } else if (key.matches('q', .{})) {
                 try Motion.exec(.{ .Quit = {} }, self);
             } else if (key.matches('v', .{})) {
@@ -748,6 +760,7 @@ pub const Editor = struct {
                 break;
             }
         }
+
         if (is_pending) {
             try Motion.exec(.{ .ChangeMode = .Pending }, self);
             try self.handlePendingCommand(key);
@@ -757,24 +770,24 @@ pub const Editor = struct {
         self.repeat = null;
     }
 
-    pub fn executePendingCommand(self: *Self, cmd_str: []const u8) !void {
+    fn executePendingCommand(self: *Self, cmd_str: []const u8) !void {
         if (cmds.get(cmd_str)) |motions| {
             for (motions) |motion| {
                 try Motion.exec(motion, self);
-                if (self.mode == vimz.Types.Mode.Pending) {
-                    try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Normal }, self);
+                if (self.mode == .Pending) {
+                    try Motion.exec(Motion{ .ChangeMode = .Normal }, self);
                 }
             }
         }
     }
 
-    pub fn handlePendingCommand(self: *Self, key: vaxis.Key) !void {
+    fn handlePendingCommand(self: *Self, key: vaxis.Key) !void {
         // New handling System:
         // while its a number caluclate it
 
         if (key.matches('c', .{ .ctrl = true }) or key.matches(vaxis.Key.escape, .{})) {
             self.cmd_trie.reset();
-            try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Normal }, self);
+            try Motion.exec(Motion{ .ChangeMode = .Normal }, self);
         }
 
         const key_text = key.text orelse return;
@@ -786,29 +799,30 @@ pub const Editor = struct {
                     try self.executePendingCommand(self.cmd_trie.getCurrentWord());
                 }
                 self.repeat = null;
+                self.last_cmd = self.cmd_trie.getCurrentWord();
                 self.cmd_trie.reset();
             },
             .Reject => {
                 self.cmd_trie.reset();
-                try Motion.exec(Motion{ .ChangeMode = vimz.Types.Mode.Normal }, self);
+                try Motion.exec(Motion{ .ChangeMode = .Normal }, self);
             },
             .Deciding => {},
         }
     }
 
-    pub fn handleMouseEvent(self: *Self, mouse_event: vaxis.Mouse) !void {
+    fn handleMouseEvent(self: *Self, mouse_event: vaxis.Mouse) !void {
         switch (mouse_event.type) {
             .press => {
                 try Motion.exec(.{ .ChangeMode = .Normal }, self);
                 self.moveAbs(
-                    self.top + mouse_event.row -| @abs(self.wins_opts.text.y_off),
-                    self.left + mouse_event.col -| @abs(self.wins_opts.text.x_off),
+                    self.top + mouse_event.row -| @abs(self.win_dims.text_win_dims.y_off),
+                    self.left + mouse_event.col -| @abs(self.win_dims.text_win_dims.x_off),
                 );
             },
             .drag => {
                 self.moveAbs(
-                    self.top + mouse_event.row -| @abs(self.wins_opts.text.y_off),
-                    self.left + mouse_event.col -| @abs(self.wins_opts.text.x_off),
+                    self.top + mouse_event.row -| @abs(self.win_dims.text_win_dims.y_off),
+                    self.left + mouse_event.col -| @abs(self.win_dims.text_win_dims.x_off),
                 );
 
                 if (self.mode != .Visual) {
@@ -843,13 +857,13 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
         "ciw",
         &.{
             Editor.Motion{ .DeleteInsideWord = .word },
-            Editor.Motion{ .ChangeMode = vimz.Types.Mode.Insert },
+            Editor.Motion{ .ChangeMode = .Insert },
         },
     },
     .{
         "ciW", &.{
             Editor.Motion{ .DeleteInsideWord = .WORD },
-            Editor.Motion{ .ChangeMode = vimz.Types.Mode.Insert },
+            Editor.Motion{ .ChangeMode = .Insert },
         },
     },
     .{
@@ -873,6 +887,13 @@ const cmds = std.StaticStringMap([]const Editor.Motion).initComptime(.{
         ">>",
         &.{
             Editor.Motion{ .Indent = Editor.indent_size },
+        },
+    },
+    .{
+        // TODO: Implement command  section
+        ":w",
+        &.{
+            .SaveFile,
         },
     },
 });

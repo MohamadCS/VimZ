@@ -1,18 +1,22 @@
-const Api = @import("api.zig");
 const std = @import("std");
 const utils = @import("utils.zig");
-const Vimz = Api.Vimz;
+const vimz = @import("vimz.zig");
+const Core = @import("vimz.zig").Core;
 const log = @import("logger.zig").Logger.log;
 
-pub fn addComps() !void {
-    try Api.addStatusLineComp(
+const UserComps = @This();
+
+api: vimz.Api = undefined,
+
+pub fn addComps(self: @This()) !void {
+    try self.api.addStatusLineComp(
         .{
             .update_func = &updateMode,
         },
         .Left,
     );
 
-    try Api.addStatusLineComp(
+    try self.api.addStatusLineComp(
         .{
             .update_func = &updateGitBranch,
             .async_update = true,
@@ -21,21 +25,21 @@ pub fn addComps() !void {
         .Left,
     );
 
-    try Api.addStatusLineComp(
+    try self.api.addStatusLineComp(
         .{
             .update_func = &updateFileName,
         },
         .Left,
     );
 
-    try Api.addStatusLineComp(
+    try self.api.addStatusLineComp(
         .{
             .update_func = &updateRowCol,
         },
         .Right,
     );
 
-    try Api.addStatusLineComp(
+    try self.api.addStatusLineComp(
         .{
             .update_func = &updatePendingCommand,
         },
@@ -43,19 +47,19 @@ pub fn addComps() !void {
     );
 }
 
-fn updateFileName(comp: *Api.StatusLine.Component) !void {
-    var it = std.mem.splitBackwardsAny(u8, try Api.getCurrBufferName(), "/");
+fn updateFileName(self: @This(), comp: *vimz.StatusLine.Component) !void {
+    var it = std.mem.splitBackwardsAny(u8, try self.api.getCurrBufferName(), "/");
 
     const file_name = it.next() orelse "no-name";
 
     try comp.setText("{s}", .{file_name});
     comp.style.?.italic = true;
-    comp.icon = if (try Api.isCurrBufferSaved()) null else "";
+    comp.icon = if (try self.api.isCurrBufferSaved()) null else "";
 }
 
-fn updateMode(comp: *Api.StatusLine.Component) !void {
-    const mode = try Api.getMode();
-    const theme = try Api.getTheme();
+fn updateMode(self: @This(), comp: *vimz.StatusLine.Component) !void {
+    const mode = try self.api.getMode();
+    const theme = try self.api.getTheme();
     var text: []const u8 = undefined;
 
     switch (mode) {
@@ -82,14 +86,15 @@ fn updateMode(comp: *Api.StatusLine.Component) !void {
     try comp.setText("{s}", .{text});
 }
 
-fn updateRowCol(comp: *Api.StatusLine.Component) !void {
-    try comp.setText("{}:{}", .{ try Api.getAbsCursorRow() + 1, try Api.getAbsCursorCol() + 1 });
-    const theme = try Api.getTheme();
+fn updateRowCol(self: @This(), comp: *vimz.StatusLine.Component) !void {
+    const cursor_pos = try self.api.getAbsCursorPos();
+    try comp.setText("{}:{}", .{ cursor_pos.row + 1, cursor_pos.col + 1 });
+    const theme = try self.api.getTheme();
     comp.style.?.fg = theme.red;
     comp.style.?.bold = true;
 }
 
-fn updatePendingCommand(comp: *Api.StatusLine.Component) !void {
+fn updatePendingCommand(self: @This(), comp: *vimz.StatusLine.Component) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
     defer {
@@ -100,10 +105,10 @@ fn updatePendingCommand(comp: *Api.StatusLine.Component) !void {
     }
 
     const alloc = gpa.allocator();
-    const repeat_str = if (try Api.getRepeatCommandNum()) |num|
-        try std.fmt.allocPrint(alloc, "{}{s}", .{ num, try Api.getPendingCommand() })
+    const repeat_str = if (try self.api.getRepeatCommandNum()) |num|
+        try std.fmt.allocPrint(alloc, "{}{s}", .{ num, try self.api.getPendingCommand() })
     else
-        try std.fmt.allocPrint(alloc, "{s}", .{try Api.getPendingCommand()});
+        try std.fmt.allocPrint(alloc, "{s}", .{try self.api.getPendingCommand()});
 
     defer alloc.free(repeat_str);
 
@@ -111,7 +116,9 @@ fn updatePendingCommand(comp: *Api.StatusLine.Component) !void {
     comp.style.?.fg = .{ .rgb = .{ 215, 130, 126 } };
 }
 
-fn updateGitBranch(comp: *Api.StatusLine.Component) !void {
+fn updateGitBranch(self: @This(), comp: *vimz.StatusLine.Component) !void {
+    _ = self;
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
     defer {

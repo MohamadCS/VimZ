@@ -1,72 +1,55 @@
+const vimz = @import("vimz.zig");
 const std = @import("std");
-
-pub const Vimz = @import("app.zig");
-pub const StatusLine = @import("status_line.zig").StatusLine;
-pub const Types = Vimz.Types;
 
 const Api = @This();
 
-pub fn getMode() !Types.Mode {
-    const app = try Vimz.App.getInstance();
-    return app.editor.mode;
+core: *vimz.Core = undefined,
+
+pub fn getMode(self: @This()) !vimz.Mode {
+    return self.core.editor.mode;
 }
 
-pub fn getTheme() !Vimz.Theme {
-    const app = try Vimz.App.getInstance();
-    return app.theme;
+pub fn getTheme(self: @This()) !vimz.Theme {
+    return self.core.curr_theme;
 }
 
-pub fn enqueueEvent(event: Types.Event) !void {
-    const app = try Vimz.App.getInstance();
-    try app.enqueueEvent(event);
+pub fn enqueueEvent(self: @This(), event: vimz.Event) !void {
+    self.core.loop.postEvent(event);
 }
 
-pub fn setMode(mode: Types.Mode) !void {
-    var app = try Vimz.App.getInstance();
-    app.mode = mode;
+pub fn setMode(self: *@This(), mode: vimz.Mode) void {
+    self.core.editor.mode = mode;
 }
 
-pub fn getCursorState() !Types.CursorState {
-    const app = try Vimz.App.getInstance();
-    return app.editor.cursor;
+pub fn getCursorState(self: @This()) !vimz.CursorState {
+    return self.core.editor.cursor;
 }
 
-pub fn getPendingCommand() ![]u8 {
-    const app = try Vimz.App.getInstance();
-    return app.editor.cmd_trie.curr_seq.items;
+pub fn getAbsCursorPos(self: @This()) !vimz.Position {
+    return self.core.editor.getAbsCursorPos();
 }
 
-pub fn getRepeatCommandNum() !?usize {
-    const app = try Vimz.App.getInstance();
-    return app.editor.repeat;
+pub fn getPendingCommand(self: @This()) ![]u8 {
+    return self.core.editor.cmd_trie.curr_seq.items;
 }
 
-pub fn getCurrBufferName() ![:0]const u8 {
-    const app = try Vimz.App.getInstance();
-    return app.editor.file_name;
+pub fn getRepeatCommandNum(self: @This()) !?usize {
+    return self.core.editor.repeat;
 }
 
-pub fn isCurrBufferSaved() !bool {
-    const app = try Vimz.App.getInstance();
-    return app.editor.isSaved();
+pub fn getCurrBufferName(self: @This()) ![:0]const u8 {
+    return self.core.editor.file_name;
 }
 
-pub fn getAbsCursorCol() !usize {
-    const app = try Vimz.App.getInstance();
-    return app.editor.getAbsCol();
+pub fn isCurrBufferSaved(self: @This()) !bool {
+    return self.core.editor.isSaved();
 }
 
-pub fn getAbsCursorRow() !usize {
-    const app = try Vimz.App.getInstance();
-    return app.editor.getAbsRow();
+pub fn getAllocator(self: @This()) !std.mem.Allocator {
+    return self.core.allocator;
 }
 
-pub fn getAllocator() !std.mem.Allocator {
-    const app = try Vimz.App.getInstance();
-    return app.allocator;
+pub fn addStatusLineComp(self: @This(), comp: vimz.StatusLine.Component, pos: vimz.StatusLine.Position) !void {
+    try self.core.status_line.addComp(comp, pos);
 }
 
-pub fn addStatusLineComp(comp: StatusLine.Component, pos: StatusLine.Position) !void {
-    var app = try Vimz.App.getInstance();
-    try app.statusLine.addComp(comp, pos);
-}

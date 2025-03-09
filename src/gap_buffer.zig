@@ -74,7 +74,7 @@ pub fn GapBuffer(comptime T: type) type {
 
         /// Moves the cursror to new_gap_idx,
         /// The function does not alloc memory
-        pub fn moveGap(self: *Self, new_gap_idx: usize) !void {
+        pub fn moveGap(self: *Self, new_gap_idx: usize) void {
             if (self.gap_start == new_gap_idx) {
                 return;
             }
@@ -226,19 +226,11 @@ pub fn GapBuffer(comptime T: type) type {
             self.gap_start += data_slice.len;
         }
 
-        pub fn delete(self: *Self, count: usize) !void {
-            self.gap_start = @min(0, self.gap_start -| count);
-        }
-
         /// Returns an array containing at index 0 the
         /// data to the left of the cursor, and at index 1, the
         /// data to the right of the cursor
         pub fn getBuffers(self: Self) [2][]T {
             return .{ self.buffer[0..self.gap_start], self.buffer[self.gap_end + 1 ..] };
-        }
-
-        pub fn getCursorIdx(self: *Self) usize {
-            return self.gap_start;
         }
 
         fn expandGap(self: *Self, new_gap_size: usize) !void {
@@ -514,7 +506,7 @@ test " update Lines" {
     [0..];
 
     try gap_buffer.write(str);
-    try gap_buffer.moveGap(50);
+    gap_buffer.moveGap(50);
 }
 
 test "last char" {
@@ -535,7 +527,7 @@ test "last char" {
         \\hello another
     [0..];
     try gap_buffer.write(str);
-    try gap_buffer.moveGap(50);
+    gap_buffer.moveGap(50);
     try gap_buffer.print();
 }
 
@@ -559,7 +551,7 @@ test "test indent" {
         \\  hello another
     [0..];
     try gap_buffer.write(str);
-    try gap_buffer.moveGap(50);
+    gap_buffer.moveGap(50);
     try gap_buffer.print();
 }
 

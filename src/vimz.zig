@@ -4,90 +4,76 @@ const utils = @import("utils.zig");
 const Logger = @import("logger.zig").Logger;
 const target = @import("builtin").target;
 
+pub const Api = @import("api.zig");
 pub const Theme = @import("theme.zig");
-pub const Comps = @import("components.zig");
 pub const Editor = @import("editor.zig").Editor;
-pub const Types = @import("types.zig");
 pub const StatusLine = @import("status_line.zig").StatusLine;
-
-const Vimz = @This();
-
+pub const CustomComps = @import("components.zig");
 const Allocator = std.mem.Allocator;
 
-// Devide to App and State
-pub const App = struct {
+pub const Event = union(enum) {
+    key_press: vaxis.Key,
+    winsize: vaxis.Winsize,
+    refresh_status_line: void,
+};
+
+// Move to dedicated types file
+pub const CursorState = struct {
+    row: u16 = 0,
+    col: u16 = 0,
+};
+
+pub const Position = struct {
+    row: usize = 0,
+    col: usize = 0,
+};
+
+// Move to dedicated types file
+pub const Mode = enum {
+    Normal,
+    Insert,
+    Pending,
+    Visual,
+};
+
+pub const Core = struct {
     tty: vaxis.Tty,
 
     vx: vaxis.Vaxis,
 
+    loop: vaxis.Loop(Event) = undefined,
+
     allocator: Allocator,
 
-    theme: Theme,
+    curr_theme: Theme,
 
     quit: bool,
 
-    loop: vaxis.Loop(Types.Event) = undefined,
-
     editor: Editor,
 
-    statusLine: StatusLine,
+    status_line: StatusLine,
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    api: Api,
+
     const Self = @This();
-
-    fn init() !Self {
-        const allocator = App.gpa.allocator();
+    pub fn init(allocator: Allocator) !Self {
         return Self{
             .allocator = allocator,
             .tty = try vaxis.Tty.init(),
             .vx = try vaxis.init(allocator, .{}),
             .quit = false,
-            .statusLine = try StatusLine.init(allocator),
-            .theme = .{},
+            .status_line = try StatusLine.init(allocator),
+            .curr_theme = .{},
             .editor = try Editor.init(allocator),
+            .api = .{},
         };
-    }
-
-    // Singleton for simplicity.
-    // Find a better way later.
-    var instance: ?Self = null;
-    pub fn getInstance() !*Self {
-        if (App.instance) |*app| {
-            return app;
-        }
-
-        App.instance = try App.init();
-        return &App.instance.?;
     }
 
     pub fn deinit(self: *Self) void {
         self.vx.deinit(self.allocator, self.tty.anyWriter());
         self.tty.deinit();
-        self.statusLine.deinit();
+        self.status_line.deinit();
         self.editor.deinit();
-
-        const deinit_status = App.gpa.deinit();
-        if (deinit_status == .leak) {}
-    }
-
-    fn updateDims(self: *Self) !void {
-        const win = self.vx.window();
-
-        self.editor.wins_opts.win = .{
-            .x_off = 0,
-            .y_off = 0,
-            .width = win.width,
-            .height = win.height - 2,
-        };
-
-        try self.editor.updateDims();
-
-        self.statusLine.win_opts = .{
-            .x_off = 0,
-            .y_off = win.height - 2,
-            .height = 1,
-            .width = win.width,
-        };
     }
 
     fn draw(self: *Self) !void {
@@ -95,43 +81,33 @@ pub const App = struct {
 
         win.clear();
 
-        var status_line_win = win.child(self.statusLine.win_opts);
-        var editor_win = win.child(self.editor.wins_opts.win);
+        var status_line_win = win.child(self.status_line.win_opts);
+        var editor_win = win.child(self.editor.win_dims.buff_win_dims);
 
-        try self.statusLine.draw(&status_line_win);
+        try self.status_line.draw(&status_line_win);
         try self.editor.draw(&editor_win);
     }
 
-    fn handleEvent(self: *Self, event: Types.Event) !void {
+    fn handleEvent(self: *Self, event: Event) !void {
         switch (event) {
             .winsize => |ws| {
                 try self.vx.resize(self.allocator, self.tty.anyWriter(), ws);
             },
             .key_press => |key| {
-                // For some reason, vaxis enters with this key pressed
-                if (key.codepoint == vaxis.Key.f3) {
-                    return;
-                }
                 try self.editor.handleInput(key);
-            },
-            .mouse => |mouse| {
-                try self.editor.handleMouseEvent(mouse);
             },
             .refresh_status_line => {},
         }
     }
 
     fn update(self: *Self) !void {
-        try self.updateDims();
+        try self.status_line.update();
         try self.editor.update();
     }
 
-    pub fn enqueueEvent(self: *Self, event: Types.Event) !void {
-        self.loop.postEvent(event);
-    }
-
     pub fn run(self: *Self) !void {
-        self.loop = vaxis.Loop(Types.Event){
+        self.api.core = self;
+        self.loop = vaxis.Loop(Event){
             .tty = &self.tty,
             .vaxis = &self.vx,
         };
@@ -150,12 +126,12 @@ pub const App = struct {
         // Settings
         try self.vx.enterAltScreen(writer);
         try self.vx.queryTerminal(writer, 0.1 * std.time.ns_per_s);
-        try self.vx.setTerminalBackgroundColor(writer, self.theme.bg.rgb);
-        try self.vx.setTerminalForegroundColor(writer, self.theme.fg.rgb);
-        try self.vx.setTerminalCursorColor(writer, self.theme.cursor.rgb);
+        try self.vx.setTerminalBackgroundColor(writer, self.curr_theme.bg.rgb);
+        try self.vx.setTerminalForegroundColor(writer, self.curr_theme.fg.rgb);
+        try self.vx.setTerminalCursorColor(writer, self.curr_theme.cursor.rgb);
 
-        try self.statusLine.setup();
-        try self.editor.setup();
+        try self.status_line.setup(self);
+        try self.editor.setup(self);
 
         while (!self.quit) {
             self.loop.pollEvent();

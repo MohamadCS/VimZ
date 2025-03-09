@@ -2,9 +2,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const utils = @import("utils.zig");
-const vimz = @import("app.zig");
+const vimz = @import("vimz.zig");
 const log = @import("logger.zig").Logger.log;
-const Position = vimz.Types.Position;
+const Position = vimz.Position;
 
 pub const GapBuffer = @import("gap_buffer.zig").GapBuffer(TextBuffer.CharType);
 
@@ -52,7 +52,7 @@ pub const TextBuffer = struct {
 
     pub inline fn moveCursor(self: *Self, row: usize, col: usize) !void {
         const line = try self.gap_buffer.getLineInfo(row);
-        try self.gap_buffer.moveGap(line.offset + col);
+        self.gap_buffer.moveGap(line.offset + col);
     }
 
     pub inline fn insert(self: *Self, text: []const CharType, row: usize, col: usize) !void {
@@ -128,7 +128,7 @@ pub const TextBuffer = struct {
         };
     }
 
-    pub fn findCurrentWordEnd(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+    pub fn findCurrentWordEnd(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Position {
         const line = try self.getLineInfo(row);
 
         if (line.len == 0) {
@@ -181,7 +181,7 @@ pub const TextBuffer = struct {
         };
     }
 
-    pub fn findWordBeginigAux(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+    pub fn findWordBeginigAux(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Position {
         if (col > 0) {
             const pos = self.findCurrentWordBegining(row, col - 1, subWord);
             return pos;
@@ -212,7 +212,7 @@ pub const TextBuffer = struct {
         return pos;
     }
 
-    pub fn findWordBeginig(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+    pub fn findWordBeginig(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Position {
         var res = try self.findWordBeginigAux(row, col, subWord);
 
         // Skip every whitespace line
@@ -238,7 +238,7 @@ pub const TextBuffer = struct {
         return res;
     }
 
-    fn findWordEndAux(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+    fn findWordEndAux(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Position {
         const line = try self.getLineInfo(row);
         const line_count = try self.getLineCount();
 
@@ -270,7 +270,7 @@ pub const TextBuffer = struct {
         return pos;
     }
 
-    pub fn findWordEnd(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+    pub fn findWordEnd(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Position {
         var res = try self.findWordEndAux(row, col, subWord);
         const line_count = try self.getLineCount();
 
@@ -297,7 +297,7 @@ pub const TextBuffer = struct {
         return res;
     }
 
-    pub fn findNextWord(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Types.Position {
+    pub fn findNextWord(self: *Self, row: usize, col: usize, subWord: bool) !vimz.Position {
         var word_pos = try self.findCurrentWordEnd(row, col, subWord);
         const line_count = try self.getLineCount();
 
@@ -320,7 +320,7 @@ pub const TextBuffer = struct {
         return word_pos;
     }
 
-    pub fn appendNextLine(self: *Self, row: usize, col: usize) !vimz.Types.Position {
+    pub fn appendNextLine(self: *Self, row: usize, col: usize) !vimz.Position {
         const line_count = try self.getLineCount();
         if (row == line_count -| 1) {
             return .{
