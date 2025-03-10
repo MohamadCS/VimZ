@@ -300,8 +300,10 @@ pub const Editor = struct {
 
         const line_win_max_row = @min(text_win.height, try self.text_buffer.getLineCount() -| self.top -| 1);
         for (0..line_win_max_row) |row| {
-            for (0..self.row_numbers.?[row].len) |i| {
-                line_win.writeCell(@intCast(i), @intCast(row), vaxis.Cell{ .char = .{
+            const num_width = self.row_numbers.?[row].len;
+            for (0..num_width) |i| {
+                const col = line_win.width + i -| num_width -| 1;
+                line_win.writeCell(@intCast(col), @intCast(row), vaxis.Cell{ .char = .{
                     .grapheme = self.row_numbers.?[row][i .. i + 1],
                 }, .style = .{
                     .fg = theme.fg,

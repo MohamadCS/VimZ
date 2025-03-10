@@ -6,7 +6,7 @@ const builtin = @import("builtin");
 const vimz = @import("vimz.zig");
 
 pub fn main() !void {
-    if (builtin.mode == .Debug) {
+    if (comptime builtin.mode == .Debug) {
         _ = try Logger.getInstance();
     }
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
