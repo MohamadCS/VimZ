@@ -12,7 +12,7 @@ pub const StatusLine = struct {
     allocator: std.mem.Allocator,
     win_opts: vaxis.Window.ChildOptions,
     mutex: std.Thread.Mutex,
-    core: *vimz.Core = undefined,
+    core: *vimz.Core,
     user_comps: UserComps = .{},
 
     async_thread: struct {
@@ -35,6 +35,18 @@ pub const StatusLine = struct {
 
     const Self = @This();
 
+    pub fn init(allocator: std.mem.Allocator) !Self {
+        return Self{
+            .allocator = allocator,
+            .left_comps = std.ArrayList(Component).init(allocator),
+            .right_comps = std.ArrayList(Component).init(allocator),
+            .win_opts = .{},
+            .mutex = .{},
+            .user_comps = .{},
+            .core = undefined,
+        };
+    }
+
     pub fn work(core: *vimz.Core) !void {
         while (!core.quit) {
             core.status_line.mutex.lock();
@@ -56,16 +68,6 @@ pub const StatusLine = struct {
         if (self.async_thread.enabled) {
             self.async_thread.thread = try std.Thread.spawn(.{}, StatusLine.work, .{self.core});
         }
-    }
-
-    pub fn init(allocator: std.mem.Allocator) !Self {
-        return Self{
-            .allocator = allocator,
-            .left_comps = std.ArrayList(Component).init(allocator),
-            .right_comps = std.ArrayList(Component).init(allocator),
-            .win_opts = .{},
-            .mutex = .{},
-        };
     }
 
     pub const Position = enum {
@@ -172,6 +174,7 @@ pub const StatusLine = struct {
         } });
 
         self.mutex.lock();
+        defer self.mutex.unlock();
 
         var curr_col_offset: u16 = 0;
         for (self.left_comps.items) |*comp| {
@@ -228,7 +231,5 @@ pub const StatusLine = struct {
                 curr_col_offset = col_offset -| comp.left_padding;
             }
         }
-
-        self.mutex.unlock();
     }
 };

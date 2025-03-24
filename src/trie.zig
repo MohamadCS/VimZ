@@ -19,6 +19,11 @@ pub const Trie = struct {
     /// Current Word
     curr_seq: std.ArrayList(u8) = undefined, // TODO: Consider changing that to std.BoundedArray
 
+    const Regex = union(enum) {
+        Number,
+        AnyChar,
+    };
+
     pub const Result = enum {
         Reject,
         Accept,
@@ -104,6 +109,10 @@ pub const Trie = struct {
 
     pub fn step(self: *Self, ch: u8) !Result {
         const current_state = self.states.getPtr(self.curr_state_id).?;
+
+        if(self.curr_state_id == self.init_state_id and std.ascii.isDigit(ch)) {
+            try self.curr_seq.append(ch);
+        }
 
         // If an edge with ch value exists then try step to it.
         if (current_state.next_state_tbl.get(ch)) |next_state_id| {

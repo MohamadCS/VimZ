@@ -60,30 +60,29 @@ fn updateFileName(self: @This(), comp: *vimz.StatusLine.Component) !void {
 fn updateMode(self: @This(), comp: *vimz.StatusLine.Component) !void {
     const mode = try self.api.getMode();
     const theme = try self.api.getTheme();
-    var text: []const u8 = undefined;
 
-    switch (mode) {
-        .Normal => {
-            text = "NORMAL";
-            comp.style.?.fg = theme.red;
+    try comp.setText("{s}", .{
+        blk: switch (mode) {
+            .Normal => {
+                comp.style.?.fg = theme.red;
+                break :blk "NORMAL";
+            },
+            .Insert => {
+                comp.style.?.fg = theme.blue;
+                break :blk "INSERT";
+            },
+            .Pending => {
+                comp.style.?.fg = theme.red;
+                break :blk "O-PENDING";
+            },
+            .Visual => {
+                comp.style.?.fg = theme.purple;
+                break :blk "VISUAL";
+            },
         },
-        .Insert => {
-            text = "INSERT";
-            comp.style.?.fg = theme.blue;
-        },
-        .Pending => {
-            text = "O-PENDING";
-            comp.style.?.fg = theme.red;
-        },
-        .Visual => {
-            text = "VISUAL";
-            comp.style.?.fg = theme.purple;
-        },
-    }
+    });
 
     comp.style.?.bold = true;
-
-    try comp.setText("{s}", .{text});
 }
 
 fn updateRowCol(self: @This(), comp: *vimz.StatusLine.Component) !void {

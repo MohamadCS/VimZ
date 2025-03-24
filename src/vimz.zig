@@ -3,13 +3,13 @@ const vaxis = @import("vaxis");
 const utils = @import("utils.zig");
 const Logger = @import("logger.zig").Logger;
 const target = @import("builtin").target;
+const Allocator = std.mem.Allocator;
 
 pub const Api = @import("api.zig");
 pub const Theme = @import("theme.zig");
 pub const Editor = @import("editor.zig").Editor;
 pub const StatusLine = @import("status_line.zig").StatusLine;
 pub const CustomComps = @import("components.zig");
-const Allocator = std.mem.Allocator;
 
 pub const Event = union(enum) {
     key_press: vaxis.Key,
@@ -41,7 +41,7 @@ pub const Core = struct {
 
     vx: vaxis.Vaxis,
 
-    loop: vaxis.Loop(Event) = undefined,
+    loop: vaxis.Loop(Event),
 
     allocator: Allocator,
 
@@ -56,6 +56,7 @@ pub const Core = struct {
     api: Api,
 
     const Self = @This();
+
     pub fn init(allocator: Allocator) !Self {
         return Self{
             .allocator = allocator,
@@ -66,6 +67,7 @@ pub const Core = struct {
             .curr_theme = .{},
             .editor = try Editor.init(allocator),
             .api = .{},
+            .loop = undefined,
         };
     }
 
@@ -117,7 +119,6 @@ pub const Core = struct {
         const writer = buffered_writer.writer().any();
 
         // Loop Setup
-        //
         try self.loop.init();
         try self.loop.start();
 

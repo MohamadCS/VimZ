@@ -23,6 +23,8 @@ pub const Editor = struct {
 
     last_cmd: ?[]const u8,
 
+    clipboard_buff: ?[]TextBuffer.CharType,
+
     repeat: ?usize,
 
     mode: vimz.Mode,
@@ -31,7 +33,7 @@ pub const Editor = struct {
 
     cursor: vimz.CursorState,
 
-    vis_start: vimz.Position = .{},
+    vis_start: vimz.Position,
 
     top: usize,
 
@@ -62,6 +64,8 @@ pub const Editor = struct {
             .file_name = "",
             .last_cmd = null,
             .repeat = null,
+            .vis_start = .{},
+            .clipboard_buff = null,
         };
     }
 
@@ -74,6 +78,8 @@ pub const Editor = struct {
     pub fn deinit(self: *Self) void {
         self.text_buffer.deinit();
         self.cmd_trie.deinit();
+        if (self.clipboard_buff) |buff| self.allocator.free(buff);
+
         if (self.row_numbers) |row_numbers| {
             for (row_numbers) |num_slice| {
                 self.allocator.free(num_slice);
@@ -202,7 +208,7 @@ pub const Editor = struct {
             .height = win.height - 2,
         };
 
-        const x_off = 2;
+        const x_off = 1;
         self.win_dims.lines_col_dims = .{
             .x_off = x_off,
             .y_off = 0,
@@ -267,6 +273,7 @@ pub const Editor = struct {
                 return false;
             },
         }
+
         const min_row = @min(self.getAbsRow(), self.vis_start.row);
         const max_row = @max(self.getAbsRow(), self.vis_start.row);
         const max_rows_col = if (max_row == self.getAbsRow()) self.getAbsCol() else self.vis_start.col;
@@ -290,7 +297,16 @@ pub const Editor = struct {
                 return true;
             }
         }
+
         return false;
+    }
+
+    fn copy(self: *Self, start: vimz.Position, end: vimz.Position) !void {
+        if (self.clipboard_buff) |buff| {
+            self.allocator.free(buff);
+        }
+
+        self.clipboard_buff = try self.text_buffer.getSliceCopy(self.allocator, start, end);
     }
 
     pub fn draw(self: *Self, editorWin: *vaxis.Window) !void {
@@ -302,7 +318,7 @@ pub const Editor = struct {
         for (0..line_win_max_row) |row| {
             const num_width = self.row_numbers.?[row].len;
             for (0..num_width) |i| {
-                const col = line_win.width + i -| num_width -| 1;
+                const col = line_win.width + i -| num_width;
                 line_win.writeCell(@intCast(col), @intCast(row), vaxis.Cell{ .char = .{
                     .grapheme = self.row_numbers.?[row][i .. i + 1],
                 }, .style = .{
@@ -395,7 +411,11 @@ pub const Editor = struct {
             end: vimz.Position,
         },
         AppendNextLine: void,
-        WirteAtCursor: []const TextBuffer.CharType,
+        Yank: struct {
+            start: vimz.Position,
+            end: vimz.Position,
+        },
+        WriteAtCursor: []const TextBuffer.CharType,
         Replicate: struct {
             key: vaxis.Key,
             as_mode: vimz.Mode,
@@ -420,6 +440,11 @@ pub const Editor = struct {
                     const line = try editor.text_buffer.getLineInfo(editor.getAbsRow());
                     editor.moveAbs(editor.getAbsRow(), line.len -| 1);
                 },
+
+                .Yank => |st| {
+                    try editor.copy(st.start, st.end);
+                },
+
                 .MoveToStartOfLine => |res| {
                     const line = try editor.text_buffer.getLineInfo(editor.getAbsRow());
                     var col: usize = 0;
@@ -461,7 +486,7 @@ pub const Editor = struct {
                 .ScrollHalfPageDown => {
                     editor.moveAbs(editor.getAbsRow() +| editor.win_dims.text_win_dims.height.? / 2, editor.getAbsCol());
                 },
-                .WirteAtCursor => |text| {
+                .WriteAtCursor => |text| {
                     try editor.text_buffer.insert(text, editor.getAbsRow(), editor.getAbsCol());
                     editor.moveRight(@intCast(text.len));
                 },
@@ -596,6 +621,9 @@ pub const Editor = struct {
                     .col = self.getAbsCol(),
                 },
             } }, self);
+        } else if (key.matches('y', .{})) {
+            try Motion.exec(.{ .Yank = .{ .start = self.vis_start, .end = self.getAbsCursorPos() } }, self);
+            try Motion.exec(.{ .ChangeMode = .Normal }, self);
         } else if (key.matches('v', .{})) {
             try Motion.exec(.{ .ChangeMode = .Normal }, self);
         } else {
@@ -613,7 +641,7 @@ pub const Editor = struct {
                 .as_mode = .Normal,
             } }, self);
         } else if (key.matches(vaxis.Key.tab, .{})) {
-            try Motion.exec(.{ .WirteAtCursor = " " ** Editor.indent_size }, self);
+            try Motion.exec(.{ .WriteAtCursor = " " ** Editor.indent_size }, self);
         } else if (key.matches(vaxis.Key.backspace, .{})) {
             if (self.getAbsRow() == 0 and self.getAbsCol() == 0) {
                 return;
@@ -636,7 +664,7 @@ pub const Editor = struct {
             try Motion.exec(.{ .Indent = indent }, self);
             try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
         } else if (key.text) |text| {
-            try Motion.exec(Motion{ .WirteAtCursor = text }, self);
+            try Motion.exec(Motion{ .WriteAtCursor = text }, self);
         }
     }
 
@@ -667,11 +695,8 @@ pub const Editor = struct {
 
         if (std.ascii.isDigit(@intCast(key.codepoint))) {
             const d = (key.codepoint - '0');
-            if (self.repeat) |num| {
-                self.repeat = num * 10 + d;
-            } else {
-                self.repeat = d;
-            }
+            self.repeat = (self.repeat orelse 0) * 10 + d;
+
             return;
         }
 
@@ -728,6 +753,8 @@ pub const Editor = struct {
                 try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
             } else if (key.matches('G', .{})) {
                 try Motion.exec(.{ .LastLine = {} }, self);
+            } else if (key.matches('p', .{})) {
+                try Motion.exec(.{ .WriteAtCursor = self.clipboard_buff orelse "" }, self);
             } else if (key.matches('w', .{})) {
                 try Motion.exec(.{ .NextWord = .word }, self);
             } else if (key.matches('D', .{})) {

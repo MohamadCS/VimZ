@@ -11,6 +11,7 @@ pub const GapBuffer = @import("gap_buffer.zig").GapBuffer(TextBuffer.CharType);
 // Abstraction of a Gap buffer
 pub const TextBuffer = struct {
     allocator: Allocator,
+
     gap_buffer: GapBuffer,
 
     changed: bool,
@@ -50,6 +51,34 @@ pub const TextBuffer = struct {
         return self.gap_buffer.buffer[idx];
     }
 
+    fn getIdx(self: *Self, idx: usize) usize {
+        if (idx < self.gap_buffer.gap_start) {
+            return idx;
+        }
+
+        return idx + self.gap_buffer.gapSize();
+    }
+
+    pub fn getSliceCopy(self: *Self, allocator: Allocator, start: vimz.Position, end: vimz.Position) ![]CharType {
+        const new_size = try self.getIntervalSize(start, end);
+        var buff = try allocator.alloc(TextBuffer.CharType, new_size);
+
+        var start_idx = try self.gap_buffer.getRelIdx(start.row, start.col);
+        var end_idx = try self.gap_buffer.getRelIdx(end.row, end.col);
+
+        if (start_idx > end_idx) {
+            const temp = start_idx;
+            start_idx = end_idx;
+            end_idx = temp;
+        }
+
+        for (0.., start_idx..end_idx + 1) |to, from| {
+            buff[to] = self.gap_buffer.buffer[self.getIdx(from)];
+        }
+
+        return buff;
+    }
+
     pub inline fn moveCursor(self: *Self, row: usize, col: usize) !void {
         const line = try self.gap_buffer.getLineInfo(row);
         self.gap_buffer.moveGap(line.offset + col);
@@ -59,6 +88,13 @@ pub const TextBuffer = struct {
         self.changed = true;
         try self.moveCursor(row, col);
         try self.gap_buffer.write(text);
+    }
+
+    pub inline fn getIntervalSize(self: *Self, start: Position, end: Position) !usize {
+        const start_idx = try self.gap_buffer.getRelIdx(start.row, start.col);
+        const end_idx = try self.gap_buffer.getRelIdx(end.row, end.col);
+        const size = @max(start_idx, end_idx) - @min(start_idx, end_idx) + 1;
+        return size;
     }
 
     /// Deletes the interval between start and end, returns the begining.
@@ -341,4 +377,12 @@ pub const TextBuffer = struct {
             .col = curr_line.len,
         };
     }
+
+    // we need to design a selection mechanism
+    // The design goes as follows: for example
+    // "iw" is inside the word, the function should return the start and end
+    // positions
+    // we already implemented that by deleting the word, we need to give just the start and end positions
+    // and let other function handle if its a deletion, a selection or anything else
+
 };

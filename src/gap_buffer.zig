@@ -29,7 +29,7 @@ pub fn GapBuffer(comptime T: type) type {
         gap_start: usize,
 
         /// true if and only if the buffer's content is changed exluding the gap
-        dirty: bool = true,
+        dirty: bool,
 
         /// The index of the end of the gap
         gap_end: usize,
@@ -60,6 +60,7 @@ pub fn GapBuffer(comptime T: type) type {
                 .gap_start = 0,
                 .gap_end = init_size - 1,
                 .lines = std.ArrayList(Line).init(allocator),
+                .dirty = true,
             };
         }
 
@@ -68,7 +69,7 @@ pub fn GapBuffer(comptime T: type) type {
             self.lines.deinit();
         }
 
-        inline fn gapSize(self: *Self) usize {
+        pub inline fn gapSize(self: *Self) usize {
             return self.gap_end - self.gap_start + 1;
         }
 
@@ -109,6 +110,7 @@ pub fn GapBuffer(comptime T: type) type {
                 self.gap_end = self.gap_start + gap_size - 1;
             }
         }
+
 
         fn updateLines(self: *Self) !void {
             if (!self.dirty) {
@@ -206,6 +208,7 @@ pub fn GapBuffer(comptime T: type) type {
             try self.updateLines();
             return self.lines.items;
         }
+
 
         /// Writes a data slice begining at the current cursor index
         /// if there is the gap size is not enought, then it will
