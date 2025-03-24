@@ -421,6 +421,10 @@ pub const Editor = struct {
             as_mode: vimz.Mode,
         },
         SaveFile: void,
+        Past: enum {
+            BeforeCursor,
+            AfterCursor,
+        },
 
         pub fn exec(self: Motion, editor: *Editor) anyerror!void {
             switch (self) {
@@ -585,6 +589,19 @@ pub const Editor = struct {
                         try file.writeAll(buffer);
                     }
                     editor.text_buffer.changed = false;
+                },
+
+                .Past => |place| {
+                    const past_text = editor.clipboard_buff orelse "";
+                    try editor.text_buffer.insert(past_text, editor.getAbsRow(), blk: switch (place) {
+                        .BeforeCursor => {
+                            break :blk editor.getAbsCol();
+                        },
+                        .AfterCursor => {
+                            break :blk editor.getAbsCol() + 1;
+                        },
+                    });
+                    editor.moveRight(@intCast(past_text.len));
                 },
 
                 inline else => {},
@@ -753,8 +770,10 @@ pub const Editor = struct {
                 try Motion.exec(.{ .MoveToStartOfLine = .{ .stopAfterWs = true } }, self);
             } else if (key.matches('G', .{})) {
                 try Motion.exec(.{ .LastLine = {} }, self);
+            } else if (key.matches('P', .{})) {
+                try Motion.exec(.{ .Past = .BeforeCursor }, self);
             } else if (key.matches('p', .{})) {
-                try Motion.exec(.{ .WriteAtCursor = self.clipboard_buff orelse "" }, self);
+                try Motion.exec(.{ .Past = .AfterCursor }, self);
             } else if (key.matches('w', .{})) {
                 try Motion.exec(.{ .NextWord = .word }, self);
             } else if (key.matches('D', .{})) {
